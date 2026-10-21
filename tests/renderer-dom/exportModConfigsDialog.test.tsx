@@ -429,4 +429,37 @@ describe("Manage Mods: the mod config export picker", () => {
     expect(roomBox.checked).toBe(false)
     expect(serverBox.disabled).toBe(false)
   })
+
+  it("ticks all valid configs and hides the folder count when the valid count exactly fits the pack capacity (#590)", async () => {
+    const mods: InstalledModType[] = Array.from({ length: 1_998 }, (_, index) => ({
+      name: `Mod ${index}`,
+      modid: `mod${index}`,
+      version: "1.0.0",
+      path: `/games/a/Mods/mod${index}-1.0.0.zip`,
+      enabled: true,
+      authors: ["Ann"],
+      contributors: []
+    }))
+    const installationWithServer: InstallationType = {
+      ...anInstallation(),
+      servers: [{ id: "srv-1", name: "Main Server", host: "127.0.0.1", port: 42420, lastLaunched: 0 }]
+    }
+
+    installMockWindowApi({
+      modsManager: {
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [ROOM_SIZE], linked: [] })),
+        exportModpack: vi.fn(async () => ({ success: true, path: "/out/pack.json" }))
+      }
+    })
+    renderWithProviders(<ExportModConfigsDialog open installation={installationWithServer} installedMods={mods} includeServers close={vi.fn()} />)
+
+    // 1998 mods + 1 server leaves room for 1 config, and the folder holds exactly 1 valid config (validCount === maxConfigs).
+    expect(await screen.findByText("This modpack will carry 1 mod config file from this Installation. Untick the ones it should not carry.", {}, { timeout: 3000 })).toBeTruthy()
+    // The total folder count notice is only displayed when validCount > maxConfigs.
+    expect(screen.queryByText("This Installation has 1 file in its ModConfig folder.")).toBeNull()
+
+    const roomBox = await rowFor(ROOM_SIZE.name)
+    expect(roomBox.checked).toBe(true)
+    expect(roomBox.disabled).toBe(false)
+  })
 })

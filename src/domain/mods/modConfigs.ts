@@ -17,6 +17,10 @@ export const MAX_MODPACK_ENTRIES = 2_000
  * Separate from {@link MAX_MODPACK_ENTRIES} so a folder past the 2,000-entry pack ceiling still lists
  * on import and opens the export picker (#590), where the player can narrow the selection down to a
  * subset the pack can carry, while still bounding traversal of an adversarial or runaway folder.
+ *
+ * Note: this bound counts `.json` files and symbolic links only; non-json files (such as `.txt`) and
+ * subdirectories are traversed without adding to this counter. The picker dialog renders the entire
+ * list without DOM virtualisation, which takes around a second for 10,000 rows in jsdom.
  */
 export const MAX_MOD_CONFIG_LISTING_ENTRIES = 10_000
 

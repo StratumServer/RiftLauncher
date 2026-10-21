@@ -18,11 +18,14 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * some Mods, an API key, and the pack is a file they are about to hand to somebody. So the tick opens
  * this, every file gets a row, and the pack carries the rows that are left ticked.
  *
- * Files start ticked by default, which is the one place this deliberately parts company with
- * `ImportModConfigsDialog` next door. There a tick meant overwriting a file the player may have spent
- * an evening on, so it started clear. Here the tick means sharing a file the player has already said
- * they want to share by ticking the box that opened this dialog. The warning is what makes that safe,
- * and every row is a way to say no to one of them.
+ * Files start ticked by default when every valid config fits within the pack's remaining entry
+ * capacity (2,000 entries across mods, servers, and configs together). When the folder holds more
+ * valid configs than the pack can carry, none start ticked so the player can choose the subset to
+ * carry without having to untick thousands of files first. This is the one place this deliberately
+ * parts company with `ImportModConfigsDialog` next door. There a tick meant overwriting a file the
+ * player may have spent an evening on, so it started clear. Here the tick means sharing a file the
+ * player has already said they want to share by ticking the box that opened this dialog. The warning
+ * is what makes that safe, and every row is a way to say no to one of them.
  *
  * Files that a pack cannot carry (a name Windows refuses or that carries hidden Unicode characters,
  * or a name that collides with another config in letter case) and symbolic links display why under

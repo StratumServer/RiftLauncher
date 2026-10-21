@@ -689,6 +689,42 @@ describe("GET_MOD_CONFIGS", () => {
       lstat.mockRestore()
     }
   })
+
+  it("refuses a narrowed export from a folder past the listing ceiling (#590)", async () => {
+    const { MAX_MOD_CONFIG_LISTING_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const folder = modConfigFolder()
+    mkdirSync(folder, { recursive: true })
+    const fse = (await import("fs-extra")).default
+    const total = (MAX_MOD_CONFIG_LISTING_ENTRIES ?? 10_000) + 1
+    const fakeFiles = Array.from({ length: total }, (_, index) => ({
+      name: `c${index}.json`,
+      isDirectory: (): boolean => false,
+      isSymbolicLink: (): boolean => false,
+      isFile: (): boolean => true
+    }))
+    const readdir = vi.spyOn(fse, "readdir").mockResolvedValue(fakeFiles as never)
+    const lstat = vi.spyOn(fse, "lstat").mockImplementation((async () => ({
+      isDirectory: (): boolean => true,
+      isSymbolicLink: (): boolean => false,
+      size: 2
+    })) as never)
+    const originalReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation(((path: unknown, ...rest: unknown[]) => {
+      if (typeof path === "string" && path.includes("ModConfig")) {
+        return Promise.resolve(Buffer.from("{}"))
+      }
+      return originalReadFile(path as never, ...(rest as [never]))
+    }) as never)
+
+    try {
+      const result = await collectModConfigs(installationPath, ["c0.json", "c1.json"])
+      assert.deepEqual(result, { ok: false, reason: "too-many" })
+    } finally {
+      readdir.mockRestore()
+      lstat.mockRestore()
+      readFile.mockRestore()
+    }
+  })
 })
 
 describe("maxExportableModConfigs and defaultChosenModConfigs (#590)", () => {
