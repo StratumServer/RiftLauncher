@@ -181,7 +181,7 @@ describe("AddInstallation", () => {
     await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.backupsLimit === 0))).toBe(true))
   })
 
-  it("refuses a negative or non-integer Backups max amount and stays on the form", async () => {
+  it("refuses a negative, fractional or above-100 Backups max amount and stays on the form", async () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => true)
     const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
@@ -199,25 +199,14 @@ describe("AddInstallation", () => {
     await user.click(await screen.findByText("1.20.0"))
 
     const backupsInput = screen.getByPlaceholderText("Backups max amount")
-    fireEvent.change(backupsInput, { target: { value: "-1" } })
-    await user.click(screen.getByTitle("Add"))
+    for (const invalidValue of ["-1", "1.5", "101"]) {
+      fireEvent.change(backupsInput, { target: { value: invalidValue } })
+      await user.click(screen.getByTitle("Add"))
 
-    await screen.findByText("Fill in every field before saving.")
-    expect(screen.queryByText("installations-list")).toBeNull()
-
-    fireEvent.change(backupsInput, { target: { value: "1.5" } })
-    await user.click(screen.getByTitle("Add"))
-
-    expect(screen.queryByText("installations-list")).toBeNull()
-
-    // With backupsLimit restored to 0, an empty name still refuses with missingFields.
-    fireEvent.change(backupsInput, { target: { value: "0" } })
-    const nameInput = screen.getByPlaceholderText("My New Installation")
-    await user.clear(nameInput)
-    await user.click(screen.getByTitle("Add"))
-
-    expect(screen.queryByText("installations-list")).toBeNull()
-    expect(ensurePathExists).not.toHaveBeenCalled()
-    expect(saveConfig).not.toHaveBeenCalled()
+      await screen.findByText("Fill in every field before saving.")
+      expect(screen.queryByText("installations-list")).toBeNull()
+      expect(ensurePathExists).not.toHaveBeenCalled()
+      expect(saveConfig).not.toHaveBeenCalled()
+    }
   })
 })

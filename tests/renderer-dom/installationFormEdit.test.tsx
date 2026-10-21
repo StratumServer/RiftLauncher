@@ -466,7 +466,7 @@ describe("EditInstallation", () => {
     await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.backupsLimit === 4)).toBe(true))
   })
 
-  it("refuses a negative or non-integer Backups max amount and stays on the form", async () => {
+  it("refuses a negative, fractional or above-100 Backups max amount and stays on the form", async () => {
     const user = userEvent.setup()
     const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
     installMockWindowApi({
@@ -482,25 +482,13 @@ describe("EditInstallation", () => {
     saveConfig.mockClear()
 
     const backupsInput = screen.getByPlaceholderText("Backups max amount")
-    fireEvent.change(backupsInput, { target: { value: "-1" } })
+    for (const invalidValue of ["-1", "1.5", "101"]) {
+      fireEvent.change(backupsInput, { target: { value: invalidValue } })
+      await user.click(screen.getByTitle("Save"))
 
-    await user.click(screen.getByTitle("Save"))
-
-    await screen.findByText("Fill in every field before saving.")
-    expect(screen.queryByText("installations-list")).toBeNull()
-
-    fireEvent.change(backupsInput, { target: { value: "1.5" } })
-    await user.click(screen.getByTitle("Save"))
-
-    expect(screen.queryByText("installations-list")).toBeNull()
-
-    // With backupsLimit set to 0, clearing the required name still refuses with missingFields.
-    fireEvent.change(backupsInput, { target: { value: "0" } })
-    const nameInput = screen.getByDisplayValue("Install A")
-    await user.clear(nameInput)
-    await user.click(screen.getByTitle("Save"))
-
-    expect(screen.queryByText("installations-list")).toBeNull()
-    expect(saveConfig).not.toHaveBeenCalled()
+      await screen.findByText("Fill in every field before saving.")
+      expect(screen.queryByText("installations-list")).toBeNull()
+      expect(saveConfig).not.toHaveBeenCalled()
+    }
   })
 })

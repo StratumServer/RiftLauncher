@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { createInstallation, isValidBackupsLimit, validateInstallationFields } from "../../../src/domain/installations/create"
+import { createInstallation, isValidBackupsLimit, MAX_BACKUPS_LIMIT, MIN_BACKUPS_LIMIT, validateInstallationFields } from "../../../src/domain/installations/create"
 import type { CreateInstallationInput, CreateInstallationPorts } from "../../../src/domain/installations/create"
 
 function ports(overrides: Partial<CreateInstallationPorts> = {}): CreateInstallationPorts {
@@ -72,17 +72,21 @@ describe("validateInstallationFields", () => {
 })
 
 describe("isValidBackupsLimit", () => {
-  it("accepts 0 (backups disabled) and positive integers", () => {
-    assert.equal(isValidBackupsLimit(0), true)
+  it("accepts 0 (backups disabled) and integers up to MAX_BACKUPS_LIMIT", () => {
+    assert.equal(isValidBackupsLimit(MIN_BACKUPS_LIMIT), true)
     assert.equal(isValidBackupsLimit(1), true)
     assert.equal(isValidBackupsLimit(3), true)
     assert.equal(isValidBackupsLimit(10), true)
+    assert.equal(isValidBackupsLimit(MAX_BACKUPS_LIMIT), true)
   })
 
-  it("refuses negative numbers, fractions, NaN and infinities", () => {
+  it("refuses negative numbers, numbers above MAX_BACKUPS_LIMIT, fractions, NaN and infinities", () => {
     assert.equal(isValidBackupsLimit(-1), false)
     assert.equal(isValidBackupsLimit(-0.5), false)
     assert.equal(isValidBackupsLimit(1.5), false)
+    assert.equal(isValidBackupsLimit(MAX_BACKUPS_LIMIT + 1), false)
+    assert.equal(isValidBackupsLimit(150), false)
+    assert.equal(isValidBackupsLimit(1_000), false)
     assert.equal(isValidBackupsLimit(Number.NaN), false)
     assert.equal(isValidBackupsLimit(Number.POSITIVE_INFINITY), false)
     assert.equal(isValidBackupsLimit(Number.NEGATIVE_INFINITY), false)

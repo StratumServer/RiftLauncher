@@ -13,6 +13,7 @@ import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { MAX_BACKUPS_LIMIT, MIN_BACKUPS_LIMIT } from "@domain/installations/create"
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
@@ -652,7 +653,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
     version: asString(value.version, "", 128),
     gameVersionId: typeof value.gameVersionId === "string" && value.gameVersionId.length > 0 && value.gameVersionId.length <= 128 ? value.gameVersionId : null,
     startParams: asString(value.startParams, "", 8_192),
-    backupsLimit: asNumber(value.backupsLimit, defaultInstallation.backupsLimit, 0, 100),
+    backupsLimit: asNumber(value.backupsLimit, defaultInstallation.backupsLimit, MIN_BACKUPS_LIMIT, MAX_BACKUPS_LIMIT),
     backupsAuto: asBoolean(value.backupsAuto, defaultInstallation.backupsAuto),
     compressionLevel: Math.trunc(asNumber(value.compressionLevel, defaultInstallation.compressionLevel, 0, 9)),
     backups: Array.isArray(value.backups)

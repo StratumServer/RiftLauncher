@@ -9,12 +9,16 @@ export const INSTALLATION_NAME_MAX_LENGTH = 50
 /** Start param the launcher injects itself; an installation may not claim it as its own. */
 export const RESERVED_START_PARAM = "--dataPath"
 
+/** Bounds the main process and the installation forms accept for `backupsLimit`. */
+export const MIN_BACKUPS_LIMIT = 0
+export const MAX_BACKUPS_LIMIT = 100
+
 /**
- * Checks whether a Backups max amount is a valid non-negative integer.
+ * Checks whether a Backups max amount is an integer within `[MIN_BACKUPS_LIMIT, MAX_BACKUPS_LIMIT]`.
  * `0` is valid and turns automatic and manual backups off for that installation.
  */
 export function isValidBackupsLimit(backupsLimit: number): boolean {
-  return Number.isInteger(backupsLimit) && backupsLimit >= 0
+  return Number.isInteger(backupsLimit) && backupsLimit >= MIN_BACKUPS_LIMIT && backupsLimit <= MAX_BACKUPS_LIMIT
 }
 
 /** Why the name or start params of an installation don't hold up, shared by create and edit. */
