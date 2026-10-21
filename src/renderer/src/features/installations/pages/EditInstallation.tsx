@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiFileTextDuotone, PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
+import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, isValidBackupsLimit, validateInstallationFields } from "@domain/installations/create"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
@@ -99,7 +99,7 @@ function EditInslallation(): JSX.Element {
     if (installation._playing) return addNotification(t("features.installations.editWhilePlaying"), "error")
     if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
-    if (!id || !fields.name || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
+    if (!id || !fields.name || !isValidBackupsLimit(fields.backupsLimit) || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
 
     const result = validateInstallationFields({ name: fields.name, startParams: fields.startParams })
     if (!result.ok) {

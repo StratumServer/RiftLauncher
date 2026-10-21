@@ -186,6 +186,16 @@ describe("ImportModConfigsDialog, the boxes", () => {
     await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
     expect(screen.queryByText("New.json")).toBeNull()
   })
+
+  it("recognises existing configs in a folder past the pack entry ceiling (#590)", async () => {
+    const configs = Array.from({ length: 2_001 }, (_, index) => ({ name: `c${index}.json`, bytes: 2 }))
+    mount({ "c2000.json": entry("{}"), "New.json": entry("{}") }, { ok: true, configs, linked: [] })
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    expect((await rowFor("c2000.json")).checked).toBe(false)
+    expect(screen.getByText("This Installation has 2001 files in its ModConfig folder.")).toBeTruthy()
+    expect(within((await screen.findByText("c2000.json")).closest("li") as HTMLElement).getByText("Replaces yours")).toBeTruthy()
+  })
 })
 
 describe("ImportModConfigsDialog, what it sends", () => {
@@ -425,6 +435,50 @@ describe("ImportModConfigsDialog, what came back", () => {
     assertReasons(["Copy.json", "the copy for the backup folder could not be made"], rows)
     assertReasons(["Short.json", "the backup copy does not match the file on disk"], rows)
     assertReasons(["Long.json", "the file could not be written"], rows)
+  })
+
+  it("refreshes the shared listing when configs are written so other callers on the page see them (#591)", async () => {
+    const listings: ModConfigsReadResult[] = [
+      { ok: true, configs: [], linked: [] },
+      { ok: true, configs: [], linked: [] },
+      { ok: true, configs: [{ name: "New.json", bytes: 2 }], linked: [] }
+    ]
+    let callIndex = 0
+    const getModConfigs = vi.fn(async (): Promise<ModConfigsReadResult> => listings[Math.min(callIndex++, listings.length - 1)] as ModConfigsReadResult)
+    const applyModConfigs = vi.fn(
+      async (): Promise<ApplyModConfigsResult> => ({
+        ok: true,
+        backupFolder: "",
+        applied: [{ name: "New.json", kind: "new" as const }],
+        skipped: [],
+        failed: []
+      })
+    )
+    installMockWindowApi({ modsManager: { getModConfigs, applyModConfigs } })
+
+    const { rerender } = renderWithProviders(
+      <>
+        <NotificationsOverlay />
+        <ImportModConfigsDialog settings={null} installation={installation()} close={vi.fn()} />
+      </>
+    )
+
+    // Mounted shut: only the initial hook subscription walks the folder, not a second refresh() from the dialog.
+    await waitFor(() => expect(getModConfigs).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <>
+        <NotificationsOverlay />
+        <ImportModConfigsDialog settings={{ "New.json": entry("{}") }} installation={installation()} close={vi.fn()} />
+      </>
+    )
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+    await waitFor(() => expect(applyModConfigs).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getModConfigs).toHaveBeenCalledTimes(3))
   })
 })
 

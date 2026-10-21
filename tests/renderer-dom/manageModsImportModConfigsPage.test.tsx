@@ -129,6 +129,10 @@ describe("Manage Mods: importing a pack's mod configs through the page", () => {
     await screen.findAllByText("Wrote 1 file.", {}, { timeout: 3000 })
     await user.click(screen.getByRole("button", { name: /Done/ }))
 
+    // Writing the first config into an empty ModConfig folder refreshes the shared listing, so the
+    // action bar's export checkbox appears immediately without reloading the page (#591).
+    expect(await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })).toBeTruthy()
+
     // A second pack, in the same page session, carrying the file the first one wrote. The dialog is
     // still mounted between packs, so what this proves is that it asks again rather than answering
     // out of the listing it read when the page loaded.

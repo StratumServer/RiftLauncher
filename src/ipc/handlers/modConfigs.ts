@@ -13,20 +13,32 @@ import { assertBoundedString, assertString, comparablePath, isRecord } from "@sr
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { describeBackupSpaceShortfall } from "@domain/installations/backupCapacity"
 import { MOD_CONFIG_FOLDER_NAME } from "@domain/mods/folder"
-import { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables } from "@domain/mods/modConfigs"
+import {
+  assertModConfigKey,
+  defaultChosenModConfigs,
+  HIDDEN_UNICODE_NAME_CHARACTER,
+  isValidModConfigKey,
+  MAX_MOD_CONFIG_KEY_LENGTH,
+  MAX_MOD_CONFIG_LISTING_ENTRIES,
+  MAX_MODPACK_ENTRIES,
+  maxExportableModConfigs,
+  showDefaultIgnorables
+} from "@domain/mods/modConfigs"
 import { cleanFolderName, formatTimestampForFilename } from "@domain/naming"
 
-export { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables }
+export {
+  assertModConfigKey,
+  defaultChosenModConfigs,
+  HIDDEN_UNICODE_NAME_CHARACTER,
+  isValidModConfigKey,
+  MAX_MOD_CONFIG_KEY_LENGTH,
+  MAX_MOD_CONFIG_LISTING_ENTRIES,
+  MAX_MODPACK_ENTRIES,
+  maxExportableModConfigs,
+  showDefaultIgnorables
+}
 
 const LOG_PREFIX = "[back] [mods] [ipc/handlers/modConfigs.ts]"
-
-/**
- * How many rows a pack may carry, whatever they are rows of.
- *
- * It is the bound on mods, on servers and on settings together, because it exists to keep the dialog
- * a person is asked to read from growing without end, not to police any one field.
- */
-export const MAX_MODPACK_ENTRIES = 2_000
 
 /**
  * The ceiling on one modpack file, and the reason it is not the 2 MiB it used to be: since #363 a
@@ -195,7 +207,7 @@ export type ExportModpackConfigFailure = ExportModpackRefusal
  * @returns The files and the links, each relative to the folder with `/` between directories.
  * @throws When the folder cannot be listed.
  */
-async function walkModConfigs(installationPath: string, options: { only?: ReadonlySet<string> } = {}): Promise<{ files: ListedConfig[]; linked: string[] }> {
+async function walkModConfigs(installationPath: string, options: { ceiling?: number; only?: ReadonlySet<string> } = {}): Promise<{ files: ListedConfig[]; linked: string[] }> {
   const root = join(installationPath, MOD_CONFIG_FOLDER_NAME)
   if (!(await fse.pathExists(root))) return { files: [], linked: [] }
 
@@ -207,6 +219,8 @@ async function walkModConfigs(installationPath: string, options: { only?: Readon
 
   const found: ListedConfig[] = []
   const linked: string[] = []
+  const maxFound = options.ceiling ?? (options.only !== undefined ? MAX_MODPACK_ENTRIES : MAX_MOD_CONFIG_LISTING_ENTRIES)
+  let visitedEntries = 0
   // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
   const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
 
@@ -224,10 +238,15 @@ async function walkModConfigs(installationPath: string, options: { only?: Readon
       // nothing more, and whatever it is called: a folder that is a link has no reason to end in
       // `.json`, and the pack's names that sit under it are refused all the same.
       if (entry.isSymbolicLink()) {
+        if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
+        visitedEntries += 1
         linked.push(keyOf(entryPath))
         continue
       }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
+
+      if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
+      visitedEntries += 1
 
       // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
       // that is legal on the file system it was created on and unusable in a pack; the caller that
@@ -240,7 +259,7 @@ async function walkModConfigs(installationPath: string, options: { only?: Readon
       if (options.only && !options.only.has(key)) continue
       // RangeError, and not Error, so the pack builder below can tell "the folder is too big to
       // carry" from "the folder could not be read" without matching on a sentence.
-      if (found.length >= MAX_MODPACK_ENTRIES) throw new RangeError("Too many mod configs")
+      if (found.length >= maxFound) throw new RangeError("Too many mod configs")
 
       const stats = await fse.lstat(entryPath)
       found.push({ name: key, bytes: stats.size, entryPath })
@@ -278,7 +297,7 @@ export async function collectModConfigs(
       logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: playing.`)
       return { ok: false, reason: "playing" }
     }
-    files = (await walkModConfigs(installationPath, { only: chosenNames ? new Set(chosenNames) : undefined })).files
+    files = (await walkModConfigs(installationPath, { only: chosenNames ? new Set(chosenNames) : undefined, ceiling: MAX_MODPACK_ENTRIES })).files
   } catch (err) {
     if (err instanceof RangeError) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] The ModConfig folder holds more files than a modpack may carry.`)

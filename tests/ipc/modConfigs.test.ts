@@ -775,6 +775,123 @@ describe("GET_MOD_CONFIGS", () => {
       stat.mockRestore()
     }
   })
+
+  it("lists a folder past the pack entry ceiling and exports a narrowed subset from it (#590)", async () => {
+    const { MAX_MODPACK_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const folder = modConfigFolder()
+    mkdirSync(folder, { recursive: true })
+    for (let index = 0; index <= MAX_MODPACK_ENTRIES; index += 1) {
+      writeFileSync(join(folder, `c${index}.json`), `{"index":${index}}`, "utf-8")
+    }
+    const event = await createTrustedEvent()
+
+    const listed = await getModConfigsHandler()(event, installationPath)
+    assert.equal(listed.ok, true)
+    if (!listed.ok) return
+    assert.equal(listed.configs.length, MAX_MODPACK_ENTRIES + 1)
+
+    const narrowed = await collectModConfigs(installationPath, ["c0.json", `c${MAX_MODPACK_ENTRIES}.json`])
+    assert.equal(narrowed.ok, true)
+    if (!narrowed.ok) return
+    assert.deepEqual(Object.keys(narrowed.settings).sort(), ["c0.json", `c${MAX_MODPACK_ENTRIES}.json`].sort())
+  }, 30_000)
+
+  it("refuses a listing past the listing ceiling, whether files or links (#590)", async () => {
+    const { MAX_MOD_CONFIG_LISTING_ENTRIES } = await import("@src/ipc/handlers/modConfigs")
+    const folder = modConfigFolder()
+    mkdirSync(folder, { recursive: true })
+    const fse = (await import("fs-extra")).default
+    const total = (MAX_MOD_CONFIG_LISTING_ENTRIES ?? 10_000) + 1
+    const fakeFiles = Array.from({ length: total }, (_, index) => ({
+      name: `c${index}.json`,
+      isDirectory: (): boolean => false,
+      isSymbolicLink: (): boolean => false,
+      isFile: (): boolean => true
+    }))
+    const fakeLinks = Array.from({ length: total }, (_, index) => ({
+      name: `l${index}.json`,
+      isDirectory: (): boolean => false,
+      isSymbolicLink: (): boolean => true,
+      isFile: (): boolean => false
+    }))
+    const readdir = vi.spyOn(fse, "readdir")
+    const lstat = vi.spyOn(fse, "lstat").mockImplementation((async () => ({
+      isDirectory: (): boolean => true,
+      isSymbolicLink: (): boolean => false,
+      size: 2
+    })) as never)
+
+    try {
+      const event = await createTrustedEvent()
+      readdir.mockResolvedValueOnce(fakeFiles as never)
+      const listedFiles = await getModConfigsHandler()(event, installationPath)
+      assert.deepEqual(listedFiles, { ok: false, reason: "mod-config-unreadable" })
+
+      readdir.mockResolvedValueOnce(fakeLinks as never)
+      const listedLinks = await getModConfigsHandler()(event, installationPath)
+      assert.deepEqual(listedLinks, { ok: false, reason: "mod-config-unreadable" })
+    } finally {
+      readdir.mockRestore()
+      lstat.mockRestore()
+    }
+  })
+
+  it("refuses a narrowed export from a folder past the listing ceiling (#590)", async () => {
+    const { MAX_MOD_CONFIG_LISTING_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const folder = modConfigFolder()
+    mkdirSync(folder, { recursive: true })
+    const fse = (await import("fs-extra")).default
+    const total = (MAX_MOD_CONFIG_LISTING_ENTRIES ?? 10_000) + 1
+    const fakeFiles = Array.from({ length: total }, (_, index) => ({
+      name: `c${index}.json`,
+      isDirectory: (): boolean => false,
+      isSymbolicLink: (): boolean => false,
+      isFile: (): boolean => true
+    }))
+    const readdir = vi.spyOn(fse, "readdir").mockResolvedValue(fakeFiles as never)
+    const lstat = vi.spyOn(fse, "lstat").mockImplementation((async () => ({
+      isDirectory: (): boolean => true,
+      isSymbolicLink: (): boolean => false,
+      size: 2
+    })) as never)
+    const originalReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation(((path: unknown, ...rest: unknown[]) => {
+      if (typeof path === "string" && path.includes("ModConfig")) {
+        return Promise.resolve(Buffer.from("{}"))
+      }
+      return originalReadFile(path as never, ...(rest as [never]))
+    }) as never)
+
+    try {
+      const result = await collectModConfigs(installationPath, ["c0.json", "c1.json"])
+      assert.deepEqual(result, { ok: false, reason: "too-many" })
+    } finally {
+      readdir.mockRestore()
+      lstat.mockRestore()
+      readFile.mockRestore()
+    }
+  })
+})
+
+describe("maxExportableModConfigs and defaultChosenModConfigs (#590)", () => {
+  it("computes remaining config capacity from the pack ceiling and clamps at zero", async () => {
+    const { MAX_MODPACK_ENTRIES, maxExportableModConfigs } = await import("@src/ipc/handlers/modConfigs")
+
+    assert.equal(maxExportableModConfigs(0, 0), MAX_MODPACK_ENTRIES)
+    assert.equal(maxExportableModConfigs(10, 5), MAX_MODPACK_ENTRIES - 15)
+    assert.equal(maxExportableModConfigs(MAX_MODPACK_ENTRIES, 0), 0)
+    assert.equal(maxExportableModConfigs(MAX_MODPACK_ENTRIES + 50, 10), 0)
+    assert.equal(maxExportableModConfigs(-5, -2), MAX_MODPACK_ENTRIES)
+  })
+
+  it("ticks all valid non-colliding configs when within capacity and starts unticked when past it", async () => {
+    const { defaultChosenModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const colliding = new Set(["roomsize.json"])
+
+    assert.deepEqual(defaultChosenModConfigs(["RoomSize.json", "trailing .json", "ValidA.json", "ValidB.json"], colliding, 2), ["ValidA.json", "ValidB.json"])
+    assert.deepEqual(defaultChosenModConfigs(["ValidA.json", "ValidB.json", "ValidC.json"], new Set(), 2), [])
+    assert.deepEqual(defaultChosenModConfigs(["ValidA.json"], new Set(), 0), [])
+  })
 })
 
 describe("APPLY_MOD_CONFIGS", () => {

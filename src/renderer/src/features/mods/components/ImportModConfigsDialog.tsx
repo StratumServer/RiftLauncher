@@ -96,9 +96,10 @@ function ImportModConfigsDialog({
     // second import opened on the first one's summary, and the listing read when the page loaded
     // decided which boxes were ticked for a folder that had changed since: a config the previous
     // import wrote, or the game rewrote, was called one this Installation has never seen and was
-    // ticked to be written over.
+    // ticked to be written over. While the dialog is shut (`settings === null`) it asks nothing, so
+    // mounting the page does not trigger an extra walk for a pack nobody has picked (#591).
     setApplied(null)
-    refresh()
+    if (settings !== null) refresh()
   }, [settings, refresh])
 
   useEffect(() => {
@@ -135,6 +136,7 @@ function ImportModConfigsDialog({
 
         addNotification(t("features.mods.importModConfigsWritten", { count: result.applied.length }), result.failed.length > 0 ? "warning" : "success")
         setApplied(result)
+        if (result.applied.length > 0) refresh()
       })
       .catch(() => {
         // The channel rejects on malformed input rather than answering with a refusal, so a rejection

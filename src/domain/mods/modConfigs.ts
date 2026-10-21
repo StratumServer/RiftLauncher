@@ -4,6 +4,27 @@
 export const MAX_MOD_CONFIG_KEY_LENGTH = 512
 
 /**
+ * How many rows a pack may carry, whatever they are rows of.
+ *
+ * It is the bound on mods, on servers and on settings together, because it exists to keep the dialog
+ * a person is asked to read from growing without end, not to police any one field.
+ */
+export const MAX_MODPACK_ENTRIES = 2_000
+
+/**
+ * Most config entries (files and symbolic links) one folder listing will read.
+ *
+ * Separate from {@link MAX_MODPACK_ENTRIES} so a folder past the 2,000-entry pack ceiling still lists
+ * on import and opens the export picker (#590), where the player can narrow the selection down to a
+ * subset the pack can carry, while still bounding traversal of an adversarial or runaway folder.
+ *
+ * Note: this bound counts `.json` files and symbolic links only; non-json files (such as `.txt`) and
+ * subdirectories are traversed without adding to this counter. The picker dialog renders the entire
+ * list without DOM virtualisation, which takes around a second for 10,000 rows in jsdom.
+ */
+export const MAX_MOD_CONFIG_LISTING_ENTRIES = 10_000
+
+/**
  * Names Windows refuses to create a file under, with or without an extension: the DOS device names
  * that predate NTFS and still work, and the numbered variants of the two port families. `¹` is not a
  * digit to Windows either, which is why it is spelled out rather than written as a range.
@@ -151,4 +172,27 @@ export function diagnoseModConfigKey(name: string, collidingLower: ReadonlySet<s
   if (!isValidModConfigKey(name)) return "bad-name"
   if (collidingLower.has(name.toLowerCase())) return "collides"
   return undefined
+}
+
+/**
+ * How many mod config entries a modpack export still has room to carry.
+ *
+ * {@link MAX_MODPACK_ENTRIES} bounds mods, servers, and settings together, so the picker's own
+ * selection cap is whatever room remains after the pack's mods and included servers.
+ */
+export function maxExportableModConfigs(modCount: number, serverCount: number = 0): number {
+  return Math.max(0, MAX_MODPACK_ENTRIES - Math.max(0, modCount) - Math.max(0, serverCount))
+}
+
+/**
+ * Which config keys start ticked when the export picker opens.
+ *
+ * Valid, non-colliding keys start ticked when the whole set fits in the pack. When the folder holds
+ * more valid configs than the pack can carry, none start ticked so the launcher does not pick a
+ * subset by folder order or hand the player thousands of boxes to untick before choosing a few.
+ */
+export function defaultChosenModConfigs(names: readonly string[], collidingLower: ReadonlySet<string>, maxConfigs: number = MAX_MODPACK_ENTRIES): string[] {
+  if (maxConfigs <= 0) return []
+  const valid = names.filter((name) => diagnoseModConfigKey(name, collidingLower) === undefined)
+  return valid.length <= maxConfigs ? valid : []
 }
