@@ -41,10 +41,10 @@ const COLLIDE_LOWER: ModConfigListingEntry = { name: "automap.json", bytes: 25 }
 /**
  * Mounts the page with a config folder the test controls.
  *
- * `getModConfigs` answers from a variable rather than a fixed value, because the page asks this
- * question three times: the action bar's own listing, the import dialog mounted shut behind it, and
- * the export picker. Flipping the answer between two of those is how a test reaches a picker whose
- * read failed after the box it was opened from had already succeeded.
+ * `getModConfigs` answers from a variable rather than a fixed value, because callers refresh their
+ * listing on dialog open. Flipping the answer between the initial page load read and the picker's
+ * open read is how a test reaches a picker whose read failed after the box it was opened from had
+ * already succeeded.
  */
 function mountWithConfigs(
   configs: ModConfigListingEntry[],

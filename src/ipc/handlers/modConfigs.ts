@@ -310,7 +310,7 @@ export async function collectModConfigs(
     folded.add(lower)
 
     lstatBytes += file.bytes
-    if (file.bytes > MAX_MODPACK_BYTES || lstatBytes > MAX_MODPACK_BYTES) {
+    if (lstatBytes > MAX_MODPACK_BYTES) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
       return { ok: false, reason: "too-large" }
     }
@@ -332,7 +332,7 @@ export async function collectModConfigs(
     }
 
     readBytes += raw.byteLength
-    if (raw.byteLength > MAX_MODPACK_BYTES || readBytes > MAX_MODPACK_BYTES) {
+    if (readBytes > MAX_MODPACK_BYTES) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
       return { ok: false, reason: "too-large" }
     }

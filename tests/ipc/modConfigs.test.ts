@@ -577,13 +577,18 @@ describe("collectModConfigs", () => {
         []
       )
 
-      // Leaving the oversized files unticked exports the small file cleanly without reading the oversized ones.
+      // Leaving the oversized files unticked exports the small file cleanly without reading or stating the oversized ones.
+      lstat.mockClear()
       const narrowed = await collectModConfigs(installationPath, ["Small.json"])
       assert.equal(narrowed.ok, true)
       if (!narrowed.ok) return
       assert.deepEqual(narrowed.settings, { "Small.json": entry("{}") })
       assert.deepEqual(
         readFile.mock.calls.filter(([path]) => String(path).startsWith(modConfigFolder())).map(([path]) => String(path)),
+        [smallPath]
+      )
+      assert.deepEqual(
+        lstat.mock.calls.map(([path]) => String(path)).filter((path) => path !== modConfigFolder() && path.startsWith(modConfigFolder())),
         [smallPath]
       )
     } finally {
@@ -607,6 +612,30 @@ describe("collectModConfigs", () => {
 
     try {
       const collected = await collectModConfigs(installationPath, ["Growing.json"])
+      assert.deepEqual(collected, { ok: false, reason: "too-large" })
+    } finally {
+      readFile.mockRestore()
+    }
+  })
+
+  it("refuses as too-large when two files each grow after lstat and together pass MAX_MODPACK_BYTES (#593)", async () => {
+    const { MAX_MODPACK_BYTES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const pathA = join(modConfigFolder(), "GrowA.json")
+    const pathB = join(modConfigFolder(), "GrowB.json")
+    writeFileSync(pathA, "{}", "utf-8")
+    writeFileSync(pathB, "{}", "utf-8")
+
+    const half = Math.floor(MAX_MODPACK_BYTES / 2) + 100
+    const realReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation((async (target: string, ...rest: unknown[]) => {
+      if (target === pathA || target === pathB) return Buffer.alloc(half, 0x78)
+      return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest)
+    }) as never)
+
+    try {
+      const collected = await collectModConfigs(installationPath, ["GrowA.json", "GrowB.json"])
       assert.deepEqual(collected, { ok: false, reason: "too-large" })
     } finally {
       readFile.mockRestore()
