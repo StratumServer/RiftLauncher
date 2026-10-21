@@ -5,7 +5,7 @@ import { PiCheckCircleDuotone, PiProhibitInsetDuotone, PiDownloadDuotone, PiMinu
 import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "@domain/mods/importModpack"
+import { deduplicateModpackEntries, executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "@domain/mods/importModpack"
 import type { ModpackEntry, ModpackEntryStatus, ModpackModDetail, ModpackPlanItem, ModpackRequest, ModpackRowStatus, ModpackRowStatusKind } from "@domain/mods/importModpack"
 import { modsFolderInUse } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -73,11 +73,12 @@ function ImportModpackPopup({
   const [retryCount, setRetryCount] = useState(0)
 
   const installed = useMemo(() => installedMods.map(toInstalledModSnapshot), [installedMods])
+  const manifestMods = useMemo(() => (manifest ? deduplicateModpackEntries(manifest.mods) : []), [manifest])
 
   const downgradedMods = useMemo(() => {
     if (!manifest) return []
-    return modpackDowngrades(manifest.mods, installed)
-  }, [manifest, installed])
+    return modpackDowngrades(manifestMods, installed)
+  }, [manifest, manifestMods, installed])
 
   /**
    * The lookups run when the manifest opens rather than when Import is clicked.
@@ -95,7 +96,7 @@ function ImportModpackPopup({
     setFailedModids(new Set())
 
     void (async (): Promise<void> => {
-      const toResolve = modpackEntriesToResolve(manifest.mods, installed)
+      const toResolve = modpackEntriesToResolve(manifestMods, installed)
       // A pick is looked up by its listing, since a fork can declare the same modid as the original.
       const fetched = await Promise.all(
         toResolve.map(async (entry) => {
@@ -124,14 +125,14 @@ function ImportModpackPopup({
     return (): void => {
       cancelled = true
     }
-  }, [manifest, installed, queryMod, retryCount])
+  }, [manifest, manifestMods, installed, queryMod, retryCount])
 
   const retryLookups = (): void => setRetryCount((n) => n + 1)
 
   const plan = useMemo(() => {
     if (!manifest || !details) return null
-    return planModpackImport({ entries: manifest.mods, installed, gameVersion: installation.version, details, failedModids })
-  }, [manifest, details, installed, installation.version, failedModids])
+    return planModpackImport({ entries: manifestMods, installed, gameVersion: installation.version, details, failedModids })
+  }, [manifest, manifestMods, details, installed, installation.version, failedModids])
 
   const planByModid = useMemo(() => new Map((plan?.items ?? []).map((item): [string, ModpackPlanItem] => [item.modid, item])), [plan])
 
@@ -150,15 +151,15 @@ function ImportModpackPopup({
   // manifest is shown instead as unreachable rather than as a plan nobody can trust.
   const allLookupsFailed = useMemo(() => {
     if (!manifest || !details) return false
-    const toResolve = modpackEntriesToResolve(manifest.mods, installed)
+    const toResolve = modpackEntriesToResolve(manifestMods, installed)
     return toResolve.length > 0 && toResolve.every((entry) => failedModids.has(entry.modid))
-  }, [manifest, installed, details, failedModids])
+  }, [manifest, manifestMods, installed, details, failedModids])
 
   const completedCount = useMemo(() => {
     return Object.values(modStatuses).filter((s) => s !== "pending" && s !== "downloading").length
   }, [modStatuses])
 
-  const totalCount = manifest?.mods.length ?? 0
+  const totalCount = manifestMods.length
   const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
 
   function updateStatus(modid: string, status: ModStatus): void {
@@ -183,7 +184,7 @@ function ImportModpackPopup({
     // long enough for the dialog that is about them to ask. Closing first is the other half of it:
     // onFinish is reached from nowhere else, and leaving this popup open underneath the next one
     // puts two dialogs on top of each other.
-    if (manifest.mods.length === 0) {
+    if (manifestMods.length === 0) {
       handleClose()
       return onFinish()
     }
@@ -245,11 +246,11 @@ function ImportModpackPopup({
 
   useEffect(() => {
     if (manifest) {
-      setModStatuses(getInitialStatuses(manifest.mods))
+      setModStatuses(getInitialStatuses(manifestMods))
       setSummaryEntries([])
       setShowSummary(false)
     }
-  }, [manifest])
+  }, [manifest, manifestMods])
 
   if (showSummary) {
     return (
@@ -316,7 +317,7 @@ function ImportModpackPopup({
                   </TableHead>
 
                   <TableBody className="max-h-[18rem]">
-                    {[...manifest.mods]
+                    {[...manifestMods]
                       .sort((a, b) => a.modid.localeCompare(b.modid))
                       .map((mod) => {
                         const live = modStatuses[mod.modid] || "pending"

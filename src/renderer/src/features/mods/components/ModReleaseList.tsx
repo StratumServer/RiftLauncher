@@ -6,8 +6,10 @@ import clsx from "clsx"
 import { evaluateModCompatibility } from "@domain/mods/compatibility"
 import type { ModCompatibilityVerdict } from "@domain/mods/compatibility"
 import { summarizeGameVersionTags } from "@domain/mods/gameVersionRanges"
+import { modsFolderInUse } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
+import { modWriteKey, useModWrites } from "@renderer/features/mods/hooks/modWrites"
 import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useInstallMod } from "../hooks/useInstallMod"
@@ -44,6 +46,8 @@ export const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: s
 export interface IInstallationToInstallModIn {
   installation: InstallationType
   oldMod?: InstalledModType
+  /** True while the caller is still reading the Installation's Mods folder. */
+  reading?: boolean
 }
 
 /**
@@ -82,6 +86,7 @@ function ModReleaseList({
   const { addNotification } = useNotificationsContext()
 
   const installMod = useInstallMod()
+  const writes = useModWrites()
 
   // The ModDB's own list of every game version there is, newest first. It is what separates a run of
   // tags with nothing missing from one with a hole in it, so the cell below can shorten the first
@@ -147,9 +152,9 @@ function ModReleaseList({
                 <TableCell className="w-2/12 flex flex-col gap-1 items-center justify-center">
                   {installation && compatibility && (
                     <FormButton
-                      disabled={installation.oldMod?.version === release.modversion}
+                      disabled={Boolean(installation.reading) || installation.oldMod?.version === release.modversion || writes.includes(modWriteKey(installation.installation.id, release.modidstr))}
                       onClick={() => {
-                        if (installation.installation._backuping || installation.installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+                        if (modsFolderInUse(installation.installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
                         const oldMod = installation.oldMod
 

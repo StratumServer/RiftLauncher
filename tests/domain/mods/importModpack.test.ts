@@ -625,4 +625,104 @@ describe("executeModpackImport over an installed copy, through the real installM
     assert.equal(report.entries[0]?.status, "download-failed")
     assert.deepEqual([...disk], [copy])
   })
+
+  it("drops duplicate modid entries and keeps the highest version when planning, resolving, or checking downgrades (#735)", () => {
+    const olderFirst: ModpackEntry[] = [
+      { modid: "carryon", version: "1.5.0" },
+      { modid: "carryon", version: "1.8.0" }
+    ]
+    const newerFirst: ModpackEntry[] = [
+      { modid: "carryon", version: "1.8.0" },
+      { modid: "carryon", version: "1.5.0" }
+    ]
+
+    for (const duplicated of [olderFirst, newerFirst]) {
+      assert.deepEqual(modpackEntriesToResolve(duplicated, [installedCopy()]), [{ modid: "carryon", version: "1.8.0" }])
+      assert.deepEqual(modpackDowngrades(duplicated, [installedCopy()]), [{ modid: "carryon", version: "1.8.0" }])
+
+      const planned = planModpackImport({
+        entries: duplicated,
+        installed: [installedCopy()],
+        gameVersion: GAME_VERSION,
+        details: new Map([["carryon", detail([release("1.8.0", ["1.20.4"]), release("1.5.0", ["1.20.4"])])]])
+      })
+      assert.equal(planned.items.length, 1)
+      assert.equal(planned.items[0]?.requestedVersion, "1.8.0")
+      assert.equal(planned.downgrades.length, 1)
+    }
+  })
+
+  it("keeps the new archive on disk if two planned installs ever target the same replaced copy (#735)", async () => {
+    const oldCopy = "/inst/Mods/carryon-1.9.0.zip"
+    const newCopy = "/inst/Mods/carryon-2.0.1.zip"
+    const disk = new Set([oldCopy])
+    const ports = {
+      fileSystem: {
+        exists: async (path: string): Promise<boolean> => disk.has(path),
+        move: async (): Promise<boolean> => true,
+        remove: async (path: string): Promise<boolean> => disk.delete(path)
+      },
+      paths: { join: async (parts: string[]): Promise<string> => parts.join("/") },
+      downloader: {
+        download: async (request: { outputFolder: string; fileName: string }, done: (outcome: { ok: boolean; filePath?: string }) => void): Promise<void> => {
+          const target = `${request.outputFolder}/${request.fileName}`
+          disk.add(target)
+          done({ ok: true, filePath: target })
+        }
+      }
+    }
+    const item: ModpackInstallItem = {
+      decision: "install",
+      modid: "carryon",
+      requestedVersion: "2.0.1",
+      name: "Carry On",
+      release: { mainfile: "https://mods.vintagestory.at/download?fileid=2", modidstr: "carryon", modversion: "2.0.1", tags: ["1.20.4"] },
+      compatibility: "declared",
+      downgrade: false,
+      existing: { path: oldCopy, version: "1.9.0" },
+      fromVersion: "1.9.0"
+    }
+
+    const report = await executeModpackImport(
+      { installer: { install: (planned) => installMod(ports, { installationPath: "/inst", release: planned.release, existing: planned.existing }) } },
+      { plan: { items: [item, item], downgrades: [] } }
+    )
+
+    assert.deepEqual(
+      report.entries.map((entry) => entry.status),
+      ["installed", "installed"]
+    )
+    assert.deepEqual([...disk], [newCopy])
+  })
+
+  it("takes the new archive back out and leaves the old one untouched when the old copy refuses deletion (#703, #735)", async () => {
+    const lockedOldCopy = "/inst/Mods/carryon-1.9.0.zip"
+    const disk = new Set([lockedOldCopy])
+    const ports = {
+      fileSystem: {
+        exists: async (path: string): Promise<boolean> => disk.has(path),
+        move: async (): Promise<boolean> => true,
+        remove: async (path: string): Promise<boolean> => (path === lockedOldCopy ? false : disk.delete(path))
+      },
+      paths: { join: async (parts: string[]): Promise<string> => parts.join("/") },
+      downloader: {
+        download: async (request: { outputFolder: string; fileName: string }, done: (outcome: { ok: boolean; filePath?: string }) => void): Promise<void> => {
+          const target = `${request.outputFolder}/${request.fileName}`
+          disk.add(target)
+          done({ ok: true, filePath: target })
+        }
+      }
+    }
+    const plan = planModpackImport({
+      entries: [{ modid: "carryon", version: "2.0.1" }],
+      installed: [{ modid: "carryon", name: "Carry On", version: "1.9.0", path: lockedOldCopy, enabled: true }],
+      gameVersion: GAME_VERSION,
+      details: new Map([["carryon", detail([release("2.0.1", ["1.20.4"])])]])
+    })
+
+    const report = await executeModpackImport({ installer: { install: (planned) => installMod(ports, { installationPath: "/inst", release: planned.release, existing: planned.existing }) } }, { plan })
+
+    assert.equal(report.entries[0]?.status, "old-version-delete-failed")
+    assert.deepEqual([...disk], [lockedOldCopy])
+  })
 })

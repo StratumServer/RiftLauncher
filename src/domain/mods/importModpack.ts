@@ -190,6 +190,33 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
 }
 
 /**
+ * Deduplicates manifest entries by `modid`, keeping the highest version for each Mod in first-seen
+ * manifest order.
+ *
+ * An Installation with two enabled copies of one Mod exports both into the manifest, usually with
+ * the older archive first while the game loaded the newer one. Keeping the highest version per
+ * `modid` installs the copy the game actually loaded without planning two downloads or keying two
+ * table rows by the same `modid`.
+ */
+export function deduplicateModpackEntries(entries: readonly ModpackEntry[]): ModpackEntry[] {
+  const indexByModid = new Map<string, number>()
+  const result: ModpackEntry[] = []
+  for (const entry of entries) {
+    const existingIndex = indexByModid.get(entry.modid)
+    if (existingIndex === undefined) {
+      indexByModid.set(entry.modid, result.length)
+      result.push(entry)
+    } else {
+      const current = result[existingIndex]
+      if (current && entry.version !== undefined && (current.version === undefined || compareVersions(entry.version, current.version) > 0)) {
+        result[existingIndex] = entry
+      }
+    }
+  }
+  return result
+}
+
+/**
  * The entries that still need a ModDB lookup.
  *
  * The caller fetches these and hands the details back to {@link planModpackImport}. It exists so
@@ -197,7 +224,7 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
  * interleaved loop achieved by checking the folder before querying.
  */
 export function modpackEntriesToResolve(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
+  return deduplicateModpackEntries(entries).filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
 }
 
 /**
@@ -207,7 +234,7 @@ export function modpackEntriesToResolve(entries: readonly ModpackEntry[], instal
  * user agrees to anything, which is before a single ModDB page has been fetched.
  */
 export function modpackDowngrades(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => {
+  return deduplicateModpackEntries(entries).filter((entry) => {
     const existing = installedFor(installed, entry.modid)
     // A browse pick names no version, and its plan never goes below the copy installed.
     return entry.version !== undefined && existing !== undefined && compareVersions(entry.version, existing.version) < 0
@@ -381,7 +408,7 @@ function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanIte
  * @returns One item per manifest entry, in manifest order.
  */
 export function planModpackImport(input: ModpackPlanInput): ModpackImportPlan {
-  const items = input.entries.map((entry) => planEntry(entry, input))
+  const items = deduplicateModpackEntries(input.entries).map((entry) => planEntry(entry, input))
 
   return { items, downgrades: items.filter((item): item is ModpackInstallItem => item.decision === "install" && item.downgrade) }
 }

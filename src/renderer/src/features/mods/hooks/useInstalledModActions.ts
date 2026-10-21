@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
@@ -8,7 +8,7 @@ import { setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
-import { getModWritesSnapshot, isModWriting, modWriteKey, subscribeModWrites } from "@renderer/features/mods/hooks/modWrites"
+import { isModWriting, modWriteKey, useModWrites } from "@renderer/features/mods/hooks/modWrites"
 import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 
 import { newestCompatibleRelease } from "@domain/mods/compatibility"
@@ -81,7 +81,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
   // rendered anything, so the thing it has to be tested against is written synchronously.
   const busyRef = useRef(new Set<string>())
   const [busyPaths, setBusyPaths] = useState<readonly string[]>([])
-  const writes = useSyncExternalStore(subscribeModWrites, getModWritesSnapshot)
+  const writes = useModWrites()
 
   const latest = useRef({ installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete, installMod, queryMod })
   useLayoutEffect(() => {

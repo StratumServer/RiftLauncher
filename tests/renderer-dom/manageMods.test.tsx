@@ -423,11 +423,12 @@ describe("ManageMods", () => {
     const user = userEvent.setup()
     // Alpha's old archive and the take-back of its new one both refuse, Beta's download dies.
     const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false)
+    const checkPathExists = vi.fn<BridgeAPI["pathsManager"]["checkPathExists"]>(async () => true)
     const downloadOnPath = vi.fn(async (_id: string, url: string) => {
       if (url.includes("beta")) throw new Error("The transfer died.")
       return "/games/a/Mods/alpha-1.1.0.zip"
     })
-    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+    renderManageMods({ pathsManager: { deletePath, checkPathExists, downloadOnPath } })
 
     await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
@@ -445,8 +446,9 @@ describe("ManageMods", () => {
   it("reports only the two-versions message when that is all that went wrong in an Update all (#703)", async () => {
     const user = userEvent.setup()
     const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false)
+    const checkPathExists = vi.fn<BridgeAPI["pathsManager"]["checkPathExists"]>(async () => true)
     const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"))
-    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+    renderManageMods({ pathsManager: { deletePath, checkPathExists, downloadOnPath } })
 
     await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
