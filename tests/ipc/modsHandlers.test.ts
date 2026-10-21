@@ -494,6 +494,19 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
+  it("refuses to export mod configs while the Installation is playing, without opening the save dialog (#593)", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const { markInstallationPlaying } = await import("@src/ipc/installationActivity")
+    markInstallationPlaying("inst-stable")
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["RoomSize.json"])
+
+    assert.deepEqual(result, { success: false, reason: "playing" })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
   it("exports to a picked destination that does not exist yet, the normal save-as case", async () => {
     // A real save dialog almost always returns a path for a file that is not
     // there yet. This is the guard for the fix in issue #96: the destination

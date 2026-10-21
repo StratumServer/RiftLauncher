@@ -43,10 +43,10 @@ const COLLIDE_LOWER: ModConfigListingEntry = { name: "automap.json", bytes: 25 }
 /**
  * Mounts the page with a config folder the test controls.
  *
- * `getModConfigs` answers from a variable rather than a fixed value, because the page asks this
- * question three times: the action bar's own listing, the import dialog mounted shut behind it, and
- * the export picker. Flipping the answer between two of those is how a test reaches a picker whose
- * read failed after the box it was opened from had already succeeded.
+ * `getModConfigs` answers from a variable rather than a fixed value, because callers refresh their
+ * listing on dialog open. Flipping the answer between the initial page load read and the picker's
+ * open read is how a test reaches a picker whose read failed after the box it was opened from had
+ * already succeeded.
  */
 function mountWithConfigs(
   configs: ModConfigListingEntry[],
@@ -353,6 +353,19 @@ describe("Manage Mods: the mod config export picker", () => {
     } finally {
       await changeLanguage("en-US")
     }
+  })
+
+  it("says the Installation is playing when the game starts before the chosen configs are exported (#593)", async () => {
+    mountWithConfigs([ROOM_SIZE], { success: false, reason: "playing" })
+    await askForConfigs()
+    await openThePicker()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByText("Export the chosen configs", {}, { timeout: 3000 }))
+
+    await waitFor(() => {
+      expect(screen.getByText("This Installation is playing. Its mod configs can be listed once the game has closed.")).toBeTruthy()
+    })
   })
 
   it("opens the picker on a folder past the pack entry ceiling, shows the total count, starts unticked, and exports the chosen subset (#590)", async () => {

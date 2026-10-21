@@ -44,6 +44,10 @@ export function useExportModpack(): ({
     // player can act on "this file is not UTF-8" and cannot act on "something failed". One branch
     // per reason rather than a lookup, because a computed key is one the locale parity test cannot
     // see, which is exactly how a missing translation gets shipped.
+    if (result.reason === "playing") {
+      addNotification(t("features.mods.exportModConfigsPlaying"), "error")
+      return
+    }
     if (result.reason === "not-utf8") {
       addNotification(t("features.mods.exportModpackConfigNotUtf8", { name: result.name ?? "" }), "error")
       return

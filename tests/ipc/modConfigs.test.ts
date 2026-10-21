@@ -537,6 +537,152 @@ describe("collectModConfigs", () => {
     assert.equal(collected.ok, true)
     assert.deepEqual(Object.keys(collected.ok ? collected.settings : {}), ["a.json"])
   })
+
+  it("refuses a ticked file or cumulative selection past the byte ceiling before reading the oversized file (#593)", async () => {
+    const { MAX_MODPACK_BYTES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const smallPath = join(modConfigFolder(), "Small.json")
+    const hugePath = join(modConfigFolder(), "Huge.json")
+    const halfA = join(modConfigFolder(), "HalfA.json")
+    const halfB = join(modConfigFolder(), "HalfB.json")
+    writeFileSync(smallPath, "{}", "utf-8")
+    writeFileSync(hugePath, "{}", "utf-8")
+    writeFileSync(halfA, "{}", "utf-8")
+    writeFileSync(halfB, "{}", "utf-8")
+
+    const realLstat = fse.lstat.bind(fse)
+    const lstat = vi.spyOn(fse, "lstat").mockImplementation((async (target: string) => {
+      const stats = await realLstat(target)
+      if (target === hugePath) return Object.assign(stats, { size: MAX_MODPACK_BYTES + 1 })
+      if (target === halfA || target === halfB) return Object.assign(stats, { size: Math.floor(MAX_MODPACK_BYTES / 2) + 1 })
+      return stats
+    }) as never)
+    const readFile = vi.spyOn(fse, "readFile")
+
+    try {
+      // Single file past the byte ceiling: refused before readFile is called.
+      const single = await collectModConfigs(installationPath, ["Huge.json"])
+      assert.deepEqual(single, { ok: false, reason: "too-large" })
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(modConfigFolder())),
+        []
+      )
+
+      // Two files that individually fit but together pass the byte ceiling: refused before readFile is called.
+      const cumulative = await collectModConfigs(installationPath, ["HalfA.json", "HalfB.json"])
+      assert.deepEqual(cumulative, { ok: false, reason: "too-large" })
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(modConfigFolder())),
+        []
+      )
+
+      // Leaving the oversized files unticked exports the small file cleanly without reading or stating the oversized ones.
+      lstat.mockClear()
+      const narrowed = await collectModConfigs(installationPath, ["Small.json"])
+      assert.equal(narrowed.ok, true)
+      if (!narrowed.ok) return
+      assert.deepEqual(narrowed.settings, { "Small.json": entry("{}") })
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(modConfigFolder())).map(([path]) => String(path)),
+        [smallPath]
+      )
+      assert.deepEqual(
+        lstat.mock.calls.map(([path]) => String(path)).filter((path) => path !== modConfigFolder() && path.startsWith(modConfigFolder())),
+        [smallPath]
+      )
+    } finally {
+      lstat.mockRestore()
+      readFile.mockRestore()
+    }
+  })
+
+  it("refuses a file that grew past the byte ceiling between lstat and readFile (#593)", async () => {
+    const { MAX_MODPACK_BYTES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const growingPath = join(modConfigFolder(), "Growing.json")
+    writeFileSync(growingPath, "{}", "utf-8")
+
+    const realReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation((async (target: string, ...rest: unknown[]) => {
+      if (target === growingPath) return Buffer.alloc(MAX_MODPACK_BYTES + 1, 0x78)
+      return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest)
+    }) as never)
+
+    try {
+      const collected = await collectModConfigs(installationPath, ["Growing.json"])
+      assert.deepEqual(collected, { ok: false, reason: "too-large" })
+    } finally {
+      readFile.mockRestore()
+    }
+  })
+
+  it("refuses as too-large when two files each grow after lstat and together pass MAX_MODPACK_BYTES (#593)", async () => {
+    const { MAX_MODPACK_BYTES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const pathA = join(modConfigFolder(), "GrowA.json")
+    const pathB = join(modConfigFolder(), "GrowB.json")
+    writeFileSync(pathA, "{}", "utf-8")
+    writeFileSync(pathB, "{}", "utf-8")
+
+    const half = Math.floor(MAX_MODPACK_BYTES / 2) + 100
+    const realReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation((async (target: string, ...rest: unknown[]) => {
+      if (target === pathA || target === pathB) return Buffer.alloc(half, 0x78)
+      return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest)
+    }) as never)
+
+    try {
+      const collected = await collectModConfigs(installationPath, ["GrowA.json", "GrowB.json"])
+      assert.deepEqual(collected, { ok: false, reason: "too-large" })
+    } finally {
+      readFile.mockRestore()
+    }
+  })
+
+  it("refuses as unreadable-config when a ticked file vanishes or fails to read after lstat (#593)", async () => {
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const vanishedPath = join(modConfigFolder(), "Vanished.json")
+    writeFileSync(vanishedPath, "{}", "utf-8")
+
+    const realReadFile = fse.readFile.bind(fse)
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation((async (target: string, ...rest: unknown[]) => {
+      if (target === vanishedPath) throw new Error("EACCES: permission denied")
+      return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest)
+    }) as never)
+
+    try {
+      const collected = await collectModConfigs(installationPath, ["Vanished.json"])
+      assert.deepEqual(collected, { ok: false, reason: "unreadable-config" })
+    } finally {
+      readFile.mockRestore()
+    }
+  })
+
+  it("refuses to read configs while the Installation is playing (#593)", async () => {
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const { markInstallationPlaying } = await import("@src/ipc/installationActivity")
+    const fse = (await import("fs-extra")).default
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "a.json"), "{}", "utf-8")
+    markInstallationPlaying("inst-1")
+    const readFile = vi.spyOn(fse, "readFile")
+
+    try {
+      const collected = await collectModConfigs(installationPath, ["a.json"])
+      assert.deepEqual(collected, { ok: false, reason: "playing" })
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(modConfigFolder())),
+        []
+      )
+    } finally {
+      readFile.mockRestore()
+    }
+  })
 })
 
 describe("parseChosenConfigNames", () => {

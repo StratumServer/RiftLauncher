@@ -783,13 +783,14 @@ declare global {
    * (the preload's own signature, its declaration and the renderer adapter) and a reason added to
    * one copy of a union is a reason the other two refuse to compare against.
    *
+   * - `playing` is an Installation whose game is running when the export tries to read its configs.
    * - `too-large` is the pack's own byte ceiling. `unreadable-config` and `too-many` describe the
    *   folder as a whole.
    * - `not-utf8`, `bad-name`, `hidden-character`, and `collides` name the file a pack cannot carry:
    *   its bytes are not text, its name is unusable on Windows, it contains hidden Unicode, or it
    *   collides with another name on a case-insensitive file system.
    */
-  type ExportModpackRefusal = "unreadable-config" | "not-utf8" | "bad-name" | "hidden-character" | "collides" | "too-many" | "too-large"
+  type ExportModpackRefusal = "playing" | "unreadable-config" | "not-utf8" | "bad-name" | "hidden-character" | "collides" | "too-many" | "too-large"
 
   /**
    * What one apply did, file by file.

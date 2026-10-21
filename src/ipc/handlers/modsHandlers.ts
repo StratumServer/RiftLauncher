@@ -280,7 +280,7 @@ ipcMain.handle(
         const collected = await collectModConfigs(installation, chosenConfigs)
         if (!collected.ok) {
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: ${collected.reason}.`)
-          return { success: false, reason: collected.reason, name: collected.name }
+          return collected.name === undefined ? { success: false, reason: collected.reason } : { success: false, reason: collected.reason, name: collected.name }
         }
         if (Object.keys(collected.settings).length > maxExportableModConfigs(safeManifest.mods.length, safeManifest.servers?.length ?? 0)) {
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-many.`)
