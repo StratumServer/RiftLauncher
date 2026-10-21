@@ -54,4 +54,97 @@ describe("useModConfigs", () => {
 
     expect(result.current.listing).toBeUndefined()
   })
+
+  it("shares one listing across callers mounted for the same Installation and updates all of them on refresh (#591)", async () => {
+    const firstListing: ModConfigsReadResult = { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }
+    const refreshedListing: ModConfigsReadResult = {
+      ok: true,
+      configs: [
+        { name: "a.json", bytes: 2 },
+        { name: "b.json", bytes: 4 }
+      ],
+      linked: []
+    }
+    let resolveRefresh: (value: ModConfigsReadResult) => void = () => {}
+    const getModConfigs = vi
+      .fn<() => Promise<ModConfigsReadResult>>()
+      .mockResolvedValueOnce(firstListing)
+      .mockImplementationOnce(() => new Promise<ModConfigsReadResult>((resolve) => (resolveRefresh = resolve)))
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const first = renderHook(() => useModConfigs("/games/a"))
+    const second = renderHook(() => useModConfigs("/games/a"))
+
+    await waitFor(() => expect(first.result.current.listing).toEqual(firstListing))
+    expect(second.result.current.listing).toEqual(firstListing)
+    expect(getModConfigs).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      second.result.current.refresh()
+    })
+
+    // Both callers clear back to undefined while the refresh walk is in flight so neither acts on a stale list.
+    expect(first.result.current.listing).toBeUndefined()
+    expect(second.result.current.listing).toBeUndefined()
+
+    await act(async () => void resolveRefresh(refreshedListing))
+    expect(first.result.current.listing).toEqual(refreshedListing)
+    expect(second.result.current.listing).toEqual(refreshedListing)
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+  })
+
+  it("ignores an earlier in-flight answer that settles after a newer refresh (#591)", async () => {
+    const staleListing: ModConfigsReadResult = { ok: true, configs: [{ name: "stale.json", bytes: 2 }], linked: [] }
+    const freshListing: ModConfigsReadResult = { ok: true, configs: [{ name: "fresh.json", bytes: 4 }], linked: [] }
+    const resolvers: ((value: ModConfigsReadResult) => void)[] = []
+    const getModConfigs = vi.fn(() => new Promise<ModConfigsReadResult>((resolve) => resolvers.push(resolve)))
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const { result } = renderHook(() => useModConfigs("/games/a"))
+    expect(getModConfigs).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      result.current.refresh()
+    })
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+
+    await act(async () => void resolvers[1]?.(freshListing))
+    expect(result.current.listing).toEqual(freshListing)
+
+    await act(async () => void resolvers[0]?.(staleListing))
+    expect(result.current.listing).toEqual(freshListing)
+  })
+
+  it("reads the settled listing immediately when switching to an Installation another caller already holds (#591)", async () => {
+    const listingA: ModConfigsReadResult = { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }
+    const listingB: ModConfigsReadResult = { ok: true, configs: [{ name: "b.json", bytes: 4 }], linked: [] }
+    const getModConfigs = vi.fn(async (path: string): Promise<ModConfigsReadResult> => (path === "/games/a" ? listingA : listingB))
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const holderB = renderHook(() => useModConfigs("/games/b"))
+    const switcher = renderHook(({ path }) => useModConfigs(path), { initialProps: { path: "/games/a" } })
+
+    await waitFor(() => expect(holderB.result.current.listing).toEqual(listingB))
+    await waitFor(() => expect(switcher.result.current.listing).toEqual(listingA))
+
+    switcher.rerender({ path: "/games/b" })
+    expect(switcher.result.current.listing).toEqual(listingB)
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+  })
+
+  it("drops the cached listing once every caller for that Installation has unmounted (#591)", async () => {
+    const firstVisit: ModConfigsReadResult = { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }
+    const secondVisit: ModConfigsReadResult = { ok: true, configs: [{ name: "b.json", bytes: 4 }], linked: [] }
+    const getModConfigs = vi.fn<() => Promise<ModConfigsReadResult>>().mockResolvedValueOnce(firstVisit).mockResolvedValueOnce(secondVisit)
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const first = renderHook(() => useModConfigs("/games/a"))
+    await waitFor(() => expect(first.result.current.listing).toEqual(firstVisit))
+    first.unmount()
+
+    const next = renderHook(() => useModConfigs("/games/a"))
+    expect(next.result.current.listing).toBeUndefined()
+    await waitFor(() => expect(next.result.current.listing).toEqual(secondVisit))
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+  })
 })
