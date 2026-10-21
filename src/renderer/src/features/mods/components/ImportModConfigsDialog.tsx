@@ -136,6 +136,7 @@ function ImportModConfigsDialog({
 
         addNotification(t("features.mods.importModConfigsWritten", { count: result.applied.length }), result.failed.length > 0 ? "warning" : "success")
         setApplied(result)
+        if (result.applied.length > 0) refresh()
       })
       .catch(() => {
         // The channel rejects on malformed input rather than answering with a refusal, so a rejection

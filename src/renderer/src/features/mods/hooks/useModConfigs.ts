@@ -5,18 +5,26 @@ import { fetchModConfigs } from "@renderer/features/moddb/adapters/modsManager"
 interface ModConfigsCacheEntry {
   listing: ModConfigsReadResult | undefined
   requestId: number
-  startedInCurrentCommit: boolean
   listeners: Set<(listing: ModConfigsReadResult | undefined) => void>
 }
 
 const entriesByInstallation = new Map<string, ModConfigsCacheEntry>()
 
+function getOrCreateEntry(installationPath: string): ModConfigsCacheEntry {
+  let entry = entriesByInstallation.get(installationPath)
+  if (!entry) {
+    entry = {
+      listing: undefined,
+      requestId: 0,
+      listeners: new Set()
+    }
+    entriesByInstallation.set(installationPath, entry)
+  }
+  return entry
+}
+
 function startFetch(installationPath: string, entry: ModConfigsCacheEntry): void {
   const requestId = ++entry.requestId
-  entry.startedInCurrentCommit = true
-  queueMicrotask(() => {
-    entry.startedInCurrentCommit = false
-  })
   if (entry.listing !== undefined) {
     entry.listing = undefined
     for (const listener of entry.listeners) listener(undefined)
@@ -40,16 +48,17 @@ function startFetch(installationPath: string, entry: ModConfigsCacheEntry): void
  * Reads an Installation's mod configs once per page load, shared across every caller mounted for
  * that Installation, and says when it does not know yet.
  *
- * Both callers need the difference between "the folder is empty" and "the answer has not arrived",
- * and both would get it wrong by treating the second as the first: the export checkbox would offer
- * a choice that includes nothing, and the import dialog would tick every row on an installation
- * whose configs it had not seen. So the answer starts undefined and stays that way until it is one
- * thing or the other.
+ * Every caller on the page (`ManageModsActionBar`, `ExportModConfigsDialog` and
+ * `ImportModConfigsDialog`) needs the difference between "the folder is empty" and "the answer has
+ * not arrived", and each would get it wrong by treating the second as the first: the export
+ * checkbox would offer a choice that includes nothing, and the export and import dialogs would list
+ * or tick rows on an Installation whose configs they had not seen. So the answer starts undefined
+ * and stays that way until it is one thing or the other.
  *
  * `refresh` is for a caller that has changed the folder or opened a picker after page load: the
- * import dialog asks again per pack and the export picker asks on open, because the listing they
- * show decides which boxes start ticked and a config that appeared since the page loaded would be
- * missed or called new.
+ * import dialog asks again per pack and after writing configs, and the export picker asks on open,
+ * because the listing they show decides which boxes start ticked and a config that appeared since
+ * the page loaded would be missed or called new.
  *
  * @param installationPath The Installation to read, which is the only thing the host will accept.
  * @returns The host's answer, or undefined while it is still being asked, and a way to ask again.
@@ -61,8 +70,7 @@ export function useModConfigs(installationPath: string): { listing: ModConfigsRe
   }))
 
   const refresh = useCallback(() => {
-    const entry = entriesByInstallation.get(installationPath)
-    if (!entry || entry.startedInCurrentCommit) return
+    const entry = getOrCreateEntry(installationPath)
     startFetch(installationPath, entry)
   }, [installationPath])
 
@@ -70,25 +78,15 @@ export function useModConfigs(installationPath: string): { listing: ModConfigsRe
     // A component that unmounts mid-answer must not set state, and an Installation change starts a
     // new question rather than adding to the old one. While at least one caller on the page stays
     // mounted for this Installation, they share one in-flight question and one settled answer.
-    let entry = entriesByInstallation.get(installationPath)
-    const isNewEntry = !entry
-    if (!entry) {
-      entry = {
-        listing: undefined,
-        requestId: 0,
-        startedInCurrentCommit: false,
-        listeners: new Set()
-      }
-      entriesByInstallation.set(installationPath, entry)
-    }
+    const entry = getOrCreateEntry(installationPath)
 
     const listener = (nextListing: ModConfigsReadResult | undefined): void => {
       setState({ path: installationPath, listing: nextListing })
     }
     entry.listeners.add(listener)
-    setState({ path: installationPath, listing: entry.listing })
+    setState((current) => (current.path === installationPath && current.listing === entry.listing ? current : { path: installationPath, listing: entry.listing }))
 
-    if (isNewEntry) {
+    if (entry.requestId === 0) {
       startFetch(installationPath, entry)
     }
 

@@ -28,19 +28,18 @@ function anInstallation(): InstallationType {
 /**
  * Mounts the page and hands back the way to answer.
  *
- * Both components on the page ask the host what is in the ModConfig folder: the export box for its
- * count, and the import dialog, which is mounted shut and holds the same question. The mock
- * collects every resolver it is given and `answer` replies to all of them at once, because
- * answering one of two leaves the other waiting, and which of the two the box belongs to is the
- * question being tested.
+ * Every mod-config caller on the page (`ManageModsActionBar`, `ExportModConfigsDialog` and
+ * `ImportModConfigsDialog`) shares one in-flight question per Installation via `useModConfigs`, and
+ * `pending` collects each walk started during the test so `answer` resolves the active read when the
+ * test is ready.
  */
-function mountWithPendingConfigs(): { answer: (value: ModConfigsReadResult) => void; getModConfigs: ReturnType<typeof vi.fn> } {
+function mountWithPendingConfigs(mods: InstalledModType[] = []): { answer: (value: ModConfigsReadResult) => void; getModConfigs: ReturnType<typeof vi.fn> } {
   const pending: ((value: ModConfigsReadResult) => void)[] = []
   const getModConfigs = vi.fn(() => new Promise<ModConfigsReadResult>((resolve) => pending.push(resolve)))
 
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
-    modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })), getModConfigs }
+    modsManager: { getInstalledMods: vi.fn(async () => ({ mods, errors: [] })), getModConfigs }
   })
 
   mountManageMods()
@@ -90,7 +89,7 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
   it("is drawn but disabled, and says why, when the folder could not be read", async () => {
     // Drawing nothing here is the same as drawing an empty folder, and the difference is a sentence
     // the player could have acted on: a game that is running closes, a folder that is unreadable
-    // does not. The box is never retried within the session, so the sentence is all there is.
+    // does not. Until a picker refresh asks again, the sentence on the disabled box is all there is.
     const { answer } = mountWithPendingConfigs()
     await openTheExportMenu()
     expect(screen.queryByText("Include mod configs")).toBeNull()
@@ -101,6 +100,42 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     expect(box.disabled).toBe(true)
     const holder = box.closest("div")
     expect(holder?.getAttribute("title")).toBe("This Installation is playing. Its mod configs can be listed once the game has closed.")
+  })
+
+  it("hides the box while the export picker refreshes and brings it back disabled if the game started (#591)", async () => {
+    const user = userEvent.setup()
+    const enabledMod: InstalledModType = {
+      name: "Alpha Mod",
+      modid: "alpha",
+      version: "1.0.0",
+      path: "/games/a/Mods/alpha-1.0.0.zip",
+      enabled: true,
+      authors: ["Ann"],
+      contributors: []
+    }
+    const { answer, getModConfigs } = mountWithPendingConfigs([enabledMod])
+    await screen.findByText("Modpack", {}, { timeout: 3000 })
+    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }], linked: [] }))
+
+    const box = (await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })) as HTMLInputElement
+    await user.click(box)
+    expect(box.checked).toBe(true)
+
+    await openTheExportMenu()
+    const exportButton = await screen.findByText("Export Modpack", {}, { timeout: 3000 })
+    await user.click(exportButton.closest("button") as HTMLElement)
+
+    // While the picker's refresh is in flight, the shared listing is undefined so the bar does not
+    // advertise a stale config count.
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+    expect(screen.queryByLabelText("Include mod configs")).toBeNull()
+
+    await act(async () => void answer({ ok: false, reason: "playing" }))
+
+    const disabledBox = (await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })) as HTMLInputElement
+    expect(disabledBox.checked).toBe(true)
+    expect(disabledBox.disabled).toBe(true)
+    expect(disabledBox.closest("div")?.getAttribute("title")).toBe("This Installation is playing. Its mod configs can be listed once the game has closed.")
   })
 
   it("stays away from an Installation with no mod configs at all", async () => {
