@@ -46,6 +46,8 @@ export const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: s
 export interface IInstallationToInstallModIn {
   installation: InstallationType
   oldMod?: InstalledModType
+  /** True while the caller is still reading the Installation's Mods folder. */
+  reading?: boolean
 }
 
 /**
@@ -150,7 +152,7 @@ function ModReleaseList({
                 <TableCell className="w-2/12 flex flex-col gap-1 items-center justify-center">
                   {installation && compatibility && (
                     <FormButton
-                      disabled={installation.oldMod?.version === release.modversion || writes.includes(modWriteKey(installation.installation.id, release.modidstr))}
+                      disabled={Boolean(installation.reading) || installation.oldMod?.version === release.modversion || writes.includes(modWriteKey(installation.installation.id, release.modidstr))}
                       onClick={() => {
                         if (modsFolderInUse(installation.installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 

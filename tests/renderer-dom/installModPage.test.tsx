@@ -184,7 +184,114 @@ describe("the install-mod page", () => {
     }
   })
 
-  it("refuses a release click while the installation is busy with a backup or restore", async () => {
+  it("re-reads installed Mods when one Mod finishes while another write on the same Installation is still active, and keeps release buttons disabled until the read resolves (#735)", async () => {
+    let installedVersion = "1.0.0"
+    let resolvePendingRead: ((value: { mods: InstalledModType[]; errors: never[] }) => void) | null = null
+    let holdNextRead = false
+    const getInstalledMods = vi.fn(() => {
+      const answer = {
+        mods: [{ modid: "coolmod", name: "Cool Mod", version: installedVersion, path: `/mock/Installations/install-a/Mods/coolmod-${installedVersion}.zip`, enabled: true }],
+        errors: [] as never[]
+      }
+      if (!holdNextRead) return Promise.resolve(answer)
+      return new Promise<{ mods: InstalledModType[]; errors: never[] }>((resolve) => {
+        resolvePendingRead = resolve
+      })
+    })
+    const twoReleasesDetail = JSON.stringify({
+      statuscode: "200",
+      mod: {
+        modid: 42,
+        assetid: 4242,
+        name: "Cool Mod",
+        releases: [
+          {
+            releaseid: 2,
+            mainfile: "https://mods.example/coolmod-1.2.0.zip",
+            filename: "coolmod-1.2.0.zip",
+            fileid: 2,
+            downloads: 0,
+            tags: ["1.20.0"],
+            modidstr: "coolmod",
+            modversion: "1.2.0",
+            created: "2026-01-03T00:00:00Z",
+            changelog: ""
+          },
+          {
+            releaseid: 1,
+            mainfile: "https://mods.example/coolmod-1.1.0.zip",
+            filename: "coolmod-1.1.0.zip",
+            fileid: 1,
+            downloads: 0,
+            tags: ["1.20.0"],
+            modidstr: "coolmod",
+            modversion: "1.1.0",
+            created: "2026-01-02T00:00:00Z",
+            changelog: ""
+          }
+        ]
+      }
+    })
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation({ id: "install-a", version: "1.20.0" })] }))
+      },
+      modsManager: { getInstalledMods },
+      netManager: { queryURL: vi.fn(async () => twoReleasesDetail) }
+    })
+
+    const coolmodKey = modWriteKey("install-a", "coolmod")
+    const othermodKey = modWriteKey("install-a", "othermod")
+    claimModWrites([coolmodKey, othermodKey])
+    try {
+      renderWithProviders(
+        <TaskProvider>
+          <Routes>
+            <Route path="/mods/install/:modid" element={<InstallMod />} />
+          </Routes>
+        </TaskProvider>,
+        { route: "/mods/install/42" }
+      )
+
+      const releaseButtons = await screen.findAllByRole("button", { name: "Author tagged it as compatible with your selected Vintage Story Version." })
+      expect(releaseButtons).toHaveLength(2)
+      expect((releaseButtons[0] as HTMLButtonElement).disabled).toBe(true)
+      expect((releaseButtons[1] as HTMLButtonElement).disabled).toBe(true)
+      const callsBeforeRelease = getInstalledMods.mock.calls.length
+
+      // Release coolmod while othermod is still writing, and hold the folder re-read in flight.
+      installedVersion = "1.2.0"
+      holdNextRead = true
+      act(() => {
+        releaseModWrites([coolmodKey])
+      })
+
+      await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(callsBeforeRelease))
+
+      // While getInstalledMods has not resolved yet, both release buttons stay disabled so a click
+      // cannot fire with the stale 1.0.0 oldMod.
+      const buttonsWhileReading = screen.getAllByRole("button", { name: "Author tagged it as compatible with your selected Vintage Story Version." })
+      expect((buttonsWhileReading[0] as HTMLButtonElement).disabled).toBe(true)
+      expect((buttonsWhileReading[1] as HTMLButtonElement).disabled).toBe(true)
+
+      await act(async () => {
+        resolvePendingRead?.({
+          mods: [{ modid: "coolmod", name: "Cool Mod", version: "1.2.0", path: "/mock/Installations/install-a/Mods/coolmod-1.2.0.zip", enabled: true }],
+          errors: []
+        })
+      })
+
+      await waitFor(() => {
+        const updatedButtons = screen.getAllByRole("button", { name: "Author tagged it as compatible with your selected Vintage Story Version." })
+        expect((updatedButtons[0] as HTMLButtonElement).disabled).toBe(true)
+        expect((updatedButtons[1] as HTMLButtonElement).disabled).toBe(false)
+      })
+    } finally {
+      releaseModWrites([coolmodKey, othermodKey])
+    }
+  })
+
+  it.each(["_backuping", "_restoringBackup", "_updatingMods"] as const)("refuses a release click while the installation is busy with %s", async (busyFlag) => {
     const user = userEvent.setup()
     const downloadOnPath = vi.fn()
     installMockWindowApi({
@@ -192,7 +299,7 @@ describe("the install-mod page", () => {
         getConfig: vi.fn(async () =>
           createMockConfig({
             lastUsedInstallation: "install-a",
-            installations: [anInstallation({ id: "install-a", version: "1.20.0", _backuping: true })]
+            installations: [anInstallation({ id: "install-a", version: "1.20.0", [busyFlag]: true })]
           })
         )
       },

@@ -111,10 +111,17 @@ export function modArchiveFileName(release: ModReleaseToInstall, disabled = fals
  *
  * `DELETE_PATH` refuses a path that does not exist, so a `false` return from `remove` means either
  * the host could not delete the file or the file is already gone. Asking `exists` only after a
- * refused `remove` separates the two without an extra IPC call on every normal update (#735).
+ * refused `remove` separates the two without an extra IPC call on every normal update (#735). If
+ * `exists` throws (for example when the Installation left the config mid-download), treat the old
+ * archive as still present so the caller runs its normal take-back instead of rejecting.
  */
 async function removeReplacedCopy(fileSystem: FileSystem, path: string): Promise<boolean> {
-  return (await fileSystem.remove(path)) || !(await fileSystem.exists(path))
+  if (await fileSystem.remove(path)) return true
+  try {
+    return !(await fileSystem.exists(path))
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -33,22 +33,32 @@ function InstallMod(): JSX.Element {
   const [installedMods, setInstalledMods] = useState<InstalledModType[]>([])
   const writes = useModWrites()
   const installationWritePrefix = installation ? modWriteKey(installation.id, "") : null
-  const hasActiveInstallationWrite = installationWritePrefix !== null && writes.some((key) => key.startsWith(installationWritePrefix))
+  const installationWrites = installationWritePrefix !== null ? writes.filter((key) => key.startsWith(installationWritePrefix)).join("\n") : ""
+  const readTarget = installation ? `${installation.path}\n${installationWrites}` : null
+  const [settledReadTarget, setSettledReadTarget] = useState<string | null>(null)
+  const readingInstalledMods = readTarget !== null && settledReadTarget !== readTarget
 
   const { mod, loading, failed, retry } = useModReleaseCatalog(modid ?? null)
 
   useEffect(() => {
-    if (!installation) return setInstalledMods([])
+    if (!installation || readTarget === null) {
+      setInstalledMods([])
+      setSettledReadTarget(null)
+      return
+    }
 
     let current = true
     void getInstalledMods({ path: installation.path }).then(({ mods }) => {
-      if (current) setInstalledMods(mods)
+      if (current) {
+        setInstalledMods(mods)
+        setSettledReadTarget(readTarget)
+      }
     })
 
     return (): void => {
       current = false
     }
-  }, [installation, getInstalledMods, hasActiveInstallationWrite])
+  }, [installation, getInstalledMods, readTarget])
 
   // A release names the modid the file actually declares, which is what an installed copy is keyed
   // by, so the old copy is found through the releases rather than through the ModDB's numeric id.
@@ -92,7 +102,7 @@ function InstallMod(): JSX.Element {
             retry={retry}
             modToInstall={modid ?? null}
             modName={displayedModName}
-            installation={installation && { installation, oldMod }}
+            installation={installation && { installation, oldMod, reading: readingInstalledMods }}
             /*
              * No onFinishInstallation here: this page is gone by the time the archive lands, since
              * the install starts and the player is sent back to the list in the same click. The

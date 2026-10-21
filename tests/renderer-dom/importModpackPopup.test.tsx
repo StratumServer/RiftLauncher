@@ -441,6 +441,61 @@ describe("ImportModpackPopup, while it downloads", () => {
     expect(downloadOnPath.mock.calls.length).toBeGreaterThan(1)
     expect(within(screen.getByRole("status")).queryByText(/^Downloaded /)).toBeNull()
   })
+
+  it("renders one row per modid with the highest version and counts deduplicated entries in the progress bar (#735)", async () => {
+    let finishDownload!: () => void
+    const holdDownload = new Promise<void>((resolve) => {
+      finishDownload = resolve
+    })
+    const downloadOnPath = vi.fn(async (_id: string, _url: string, outputPath: string, fileName: string) => {
+      await holdDownload
+      return `${outputPath}/${fileName}`
+    })
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          const modid = url.split("/mod/")[1] ?? ""
+          const response = MODDB[modid]
+          if (!response) throw new Error(`The popup queried an unexpected mod: ${modid}`)
+          return response
+        }
+      },
+      pathsManager: {
+        checkPathExists: vi.fn(async () => true),
+        deletePath: vi.fn(async () => true),
+        downloadOnPath,
+        formatPath: vi.fn(async (parts: string[]) => parts.join("/"))
+      }
+    })
+
+    const duplicatedManifest: ModpackRequest = {
+      name: "Duplicate Pack",
+      gameVersion: GAME_VERSION,
+      mods: [
+        { modid: "carryon", version: "1.9.0", name: "Carry On" },
+        { modid: "carryon", version: "2.0.0", name: "Carry On" }
+      ]
+    }
+
+    renderWithProviders(
+      <TaskProvider>
+        <NotificationsOverlay />
+        <ImportModpackPopup isOpen manifest={duplicatedManifest} close={(): void => {}} installation={installation()} installedMods={[]} onFinish={(): void => {}} />
+      </TaskProvider>
+    )
+
+    const row = await rowFor("Carry On")
+    expect(within(row).getByText("2.0.0")).toBeTruthy()
+    expect(screen.getAllByText("Carry On")).toHaveLength(1)
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Import Modpack" })))
+    expect(await screen.findByText("0 / 1 mods")).toBeTruthy()
+    expect(screen.getByText("0%")).toBeTruthy()
+
+    await act(async () => finishDownload())
+    expect(await screen.findByRole("heading", { name: "Modpack Import Summary" })).toBeTruthy()
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+  })
 })
 
 /**

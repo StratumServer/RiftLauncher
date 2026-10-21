@@ -190,18 +190,30 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
 }
 
 /**
- * Drops later entries that repeat an earlier entry's modid, keeping manifest order.
+ * Deduplicates manifest entries by `modid`, keeping the highest version for each Mod in first-seen
+ * manifest order.
  *
- * An Installation with two enabled copies of one Mod exports both into the manifest. Planning both
- * would download the Mod twice against one folder read and key two table rows by the same modid.
+ * An Installation with two enabled copies of one Mod exports both into the manifest, usually with
+ * the older archive first while the game loaded the newer one. Keeping the highest version per
+ * `modid` installs the copy the game actually loaded without planning two downloads or keying two
+ * table rows by the same `modid`.
  */
 export function deduplicateModpackEntries(entries: readonly ModpackEntry[]): ModpackEntry[] {
-  const seen = new Set<string>()
-  return entries.filter((entry) => {
-    if (seen.has(entry.modid)) return false
-    seen.add(entry.modid)
-    return true
-  })
+  const indexByModid = new Map<string, number>()
+  const result: ModpackEntry[] = []
+  for (const entry of entries) {
+    const existingIndex = indexByModid.get(entry.modid)
+    if (existingIndex === undefined) {
+      indexByModid.set(entry.modid, result.length)
+      result.push(entry)
+    } else {
+      const current = result[existingIndex]
+      if (current && entry.version !== undefined && (current.version === undefined || compareVersions(entry.version, current.version) > 0)) {
+        result[existingIndex] = entry
+      }
+    }
+  }
+  return result
 }
 
 /**
