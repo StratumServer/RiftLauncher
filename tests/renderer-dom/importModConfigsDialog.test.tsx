@@ -186,6 +186,16 @@ describe("ImportModConfigsDialog, the boxes", () => {
     await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
     expect(screen.queryByText("New.json")).toBeNull()
   })
+
+  it("recognises existing configs in a folder past the pack entry ceiling (#590)", async () => {
+    const configs = Array.from({ length: 2_001 }, (_, index) => ({ name: `c${index}.json`, bytes: 2 }))
+    mount({ "c2000.json": entry("{}"), "New.json": entry("{}") }, { ok: true, configs, linked: [] })
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    expect((await rowFor("c2000.json")).checked).toBe(false)
+    expect(screen.getByText("This Installation has 2001 files in its ModConfig folder.")).toBeTruthy()
+    expect(within((await screen.findByText("c2000.json")).closest("li") as HTMLElement).getByText("Replaces yours")).toBeTruthy()
+  })
 })
 
 describe("ImportModConfigsDialog, what it sends", () => {

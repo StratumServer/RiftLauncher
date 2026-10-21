@@ -463,6 +463,22 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
+  it("counts servers toward the pack entry ceiling when checking mod configs (#590)", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const manifest: ModpackManifestType = {
+      ...validManifest(),
+      mods: Array.from({ length: MAX_MODPACK_ENTRIES - 1 }, (_, index) => ({ modid: `m${index}`, version: "1.0.0" })),
+      servers: [{ id: "srv-1", name: "Server", host: "127.0.0.1", port: 42420, lastLaunched: 0 }]
+    }
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), manifest, installationPath, true, ["RoomSize.json"])
+
+    assert.deepEqual(result, { success: false, reason: "too-many" })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
   // The byte ceiling is checked on the manifest as it would be written, so it counts the configs too.
   // Both files below are legal on their own and together put the pack past the cap.
   it("refuses a pack past the byte ceiling, before the save dialog is opened", async () => {

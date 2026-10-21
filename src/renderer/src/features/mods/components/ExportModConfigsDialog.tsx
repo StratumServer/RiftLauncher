@@ -5,7 +5,7 @@ import { PiCheckCircleDuotone, PiWarningDuotone, PiXCircleDuotone } from "react-
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { useModConfigs } from "@renderer/features/mods/hooks/useModConfigs"
-import { diagnoseModConfigKey, findCollidingModConfigKeys, showDefaultIgnorables } from "@domain/mods/modConfigs"
+import { defaultChosenModConfigs, diagnoseModConfigKey, findCollidingModConfigKeys, maxExportableModConfigs, showDefaultIgnorables } from "@domain/mods/modConfigs"
 
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
@@ -18,11 +18,14 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * some Mods, an API key, and the pack is a file they are about to hand to somebody. So the tick opens
  * this, every file gets a row, and the pack carries the rows that are left ticked.
  *
- * Files start ticked by default, which is the one place this deliberately parts company with
- * `ImportModConfigsDialog` next door. There a tick meant overwriting a file the player may have spent
- * an evening on, so it started clear. Here the tick means sharing a file the player has already said
- * they want to share by ticking the box that opened this dialog. The warning is what makes that safe,
- * and every row is a way to say no to one of them.
+ * Files start ticked by default when every valid config fits within the pack's remaining entry
+ * capacity (2,000 entries across mods, servers, and configs together). When the folder holds more
+ * valid configs than the pack can carry, none start ticked so the player can choose the subset to
+ * carry without having to untick thousands of files first. This is the one place this deliberately
+ * parts company with `ImportModConfigsDialog` next door. There a tick meant overwriting a file the
+ * player may have spent an evening on, so it started clear. Here the tick means sharing a file the
+ * player has already said they want to share by ticking the box that opened this dialog. The warning
+ * is what makes that safe, and every row is a way to say no to one of them.
  *
  * Files that a pack cannot carry (a name Windows refuses or that carries hidden Unicode characters,
  * or a name that collides with another config in letter case) and symbolic links display why under
@@ -50,10 +53,26 @@ function ExportModConfigsDialog({
   const { listing, refresh } = useModConfigs(installation.path)
   const [chosen, setChosen] = useState<readonly string[]>([])
 
+  const maxConfigs = useMemo(
+    () => maxExportableModConfigs(installedMods.length, includeServers ? (installation.servers?.length ?? 0) : 0),
+    [installedMods.length, includeServers, installation.servers]
+  )
+
   const collidingLower = useMemo(() => {
     if (!listing?.ok) return new Set<string>()
     return findCollidingModConfigKeys(listing.configs.map((entry) => entry.name))
   }, [listing])
+
+  const rows = useMemo(() => {
+    if (!listing?.ok) return []
+    return listing.configs.map((entry) => ({
+      name: entry.name,
+      issue: diagnoseModConfigKey(entry.name, collidingLower)
+    }))
+  }, [listing, collidingLower])
+
+  const validCount = useMemo(() => rows.filter((row) => row.issue === undefined).length, [rows])
+  const chosenSet = useMemo(() => new Set(chosen), [chosen])
 
   useEffect(() => {
     // Asked again on every open, because this dialog outlives the page's own listing: a config the
@@ -68,8 +87,14 @@ function ExportModConfigsDialog({
       setChosen([])
       return
     }
-    setChosen(listing.configs.filter((entry) => diagnoseModConfigKey(entry.name, collidingLower) === undefined).map((entry) => entry.name))
-  }, [open, listing, collidingLower])
+    setChosen(
+      defaultChosenModConfigs(
+        listing.configs.map((entry) => entry.name),
+        collidingLower,
+        maxConfigs
+      )
+    )
+  }, [open, listing, collidingLower, maxConfigs])
 
   /**
    * Closes first and exports after, so the save dialog is the only thing in front of the player.
@@ -93,6 +118,7 @@ function ExportModConfigsDialog({
           <p>{listing.reason === "playing" ? t("features.mods.exportModConfigsPlaying") : t("features.mods.exportModConfigsUnreadable")}</p>
         ) : (
           <>
+            {validCount > maxConfigs && <p className="text-sm text-zinc-300">{t("features.mods.importModConfigsHave", { count: listing.configs.length })}</p>}
             <p>{chosen.length === 0 ? t("features.mods.exportModConfigsDescZero") : t("features.mods.exportModConfigsDesc", { count: chosen.length })}</p>
 
             <p className="flex items-start gap-2 text-sm text-zinc-300">
@@ -101,26 +127,27 @@ function ExportModConfigsDialog({
             </p>
 
             <ul className="w-full max-h-[20rem] overflow-y-auto flex flex-col gap-1 text-left">
-              {listing.configs.map((entry) => {
-                const issue = diagnoseModConfigKey(entry.name, collidingLower)
+              {rows.map(({ name, issue }) => {
+                const isChosen = chosenSet.has(name)
                 return (
-                  <li key={entry.name} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
+                  <li key={name} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
                     <Input
-                      id={`export-mod-config-${entry.name}`}
+                      id={`export-mod-config-${name}`}
                       type="checkbox"
-                      checked={chosen.includes(entry.name)}
-                      disabled={issue === "bad-name" || issue === "hidden-character"}
-                      onChange={(e) => setChosen((current) => (e.target.checked ? [...current, entry.name] : current.filter((key) => key !== entry.name)))}
+                      checked={isChosen}
+                      disabled={issue === "bad-name" || issue === "hidden-character" || (!isChosen && chosen.length >= maxConfigs)}
+                      onChange={(e) =>
+                        setChosen((current) => {
+                          if (!e.target.checked) return current.filter((key) => key !== name)
+                          return current.length >= maxConfigs || current.includes(name) ? current : [...current, name]
+                        })
+                      }
                     />
-                    <label htmlFor={`export-mod-config-${entry.name}`} className="flex-1 overflow-hidden">
-                      <span className="block truncate font-bold">{entry.name}</span>
+                    <label htmlFor={`export-mod-config-${name}`} className="flex-1 overflow-hidden">
+                      <span className="block truncate font-bold">{name}</span>
                       {issue && (
                         <span className="block truncate text-sm text-zinc-300">
-                          {issue === "hidden-character"
-                            ? showDefaultIgnorables(entry.name)
-                            : issue === "bad-name"
-                              ? t("features.mods.exportModConfigsBadName")
-                              : t("features.mods.exportModConfigsCollides")}
+                          {issue === "hidden-character" ? showDefaultIgnorables(name) : issue === "bad-name" ? t("features.mods.exportModConfigsBadName") : t("features.mods.exportModConfigsCollides")}
                         </span>
                       )}
                     </label>
@@ -142,7 +169,14 @@ function ExportModConfigsDialog({
 
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
           <FormButton title={t("features.mods.exportModConfigsSkip")} onClick={() => run(undefined)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-          <FormButton title={t("features.mods.exportModConfigsApply")} onClick={() => run(chosen)} variant="primary" size="md" icon={<PiCheckCircleDuotone />} disabled={chosen.length === 0} />
+          <FormButton
+            title={t("features.mods.exportModConfigsApply")}
+            onClick={() => run(chosen)}
+            variant="primary"
+            size="md"
+            icon={<PiCheckCircleDuotone />}
+            disabled={chosen.length === 0 || chosen.length > maxConfigs}
+          />
         </ButtonsWrapper>
       </>
     </PopupDialogPanel>
