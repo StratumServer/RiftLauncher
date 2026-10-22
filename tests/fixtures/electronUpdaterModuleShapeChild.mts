@@ -72,8 +72,16 @@ async function main(): Promise<void> {
   const resolvedAutoUpdater = namedAutoUpdater ?? defaultAutoUpdater
   const resolvedFrom = namedAutoUpdater ? "named" : defaultAutoUpdater ? "default" : "neither"
 
+  // The two module files src/main/newestReleaseProvider.ts loads by their deep paths, because the
+  // package's entry point does not export them. The ".js" is part of the specifier: node's ESM
+  // resolution does not add it.
+  const githubProviderModule = (await import("electron-updater/out/providers/GitHubProvider.js")) as Record<string, unknown>
+  const providerModule = (await import("electron-updater/out/providers/Provider.js")) as Record<string, unknown>
+
   console.log(
     JSON.stringify({
+      githubProviderIsClass: typeof githubProviderModule.GitHubProvider === "function" && /^class\s/.test(Function.prototype.toString.call(githubProviderModule.GitHubProvider)),
+      parseUpdateInfoIsFunction: typeof providerModule.parseUpdateInfo === "function",
       hasOwnNamedAutoUpdater,
       hasDefaultAutoUpdaterDescriptor: Boolean(defaultAutoUpdaterDescriptor),
       resolvedFrom,
