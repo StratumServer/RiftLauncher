@@ -32,6 +32,9 @@ const KNOWN_PRERELEASES = new Set(["alpha", "beta", "rc"])
 export interface GitHubFeed {
   owner: string
   repo: string
+  /** GitHub Enterprise or a test server, with its port if any. Absent means github.com. */
+  host?: string
+  protocol?: "http" | "https"
 }
 
 type ProviderRuntimeOptions = ConstructorParameters<typeof GitHubProvider>[2]
@@ -61,12 +64,24 @@ export function updateCandidateTags(tags: readonly string[], runningVersion: str
     .sort((a, b) => semver.rcompare(a, b))
 }
 
-/** The repository resources/app-update.yml points at, or null when it is not a plain GitHub feed. */
+/**
+ * The repository resources/app-update.yml points at, with the `host` and `protocol` electron-updater's
+ * GitHub options also carry, or null when it is not a plain GitHub feed. A host or protocol that is
+ * present but unreadable gives null too: dropping it would silently aim the feed at github.com.
+ */
 export function githubFeedFromAppUpdateYml(text: string): GitHubFeed | null {
-  const value = (key: string): string | undefined => new RegExp(`^${key}: ([\\w.-]+)\\s*$`, "m").exec(text)?.[1]
+  const line = (key: string): string | undefined => new RegExp(`^${key}:[ \\t]*(.*?)\\s*$`, "m").exec(text)?.[1]
+  const value = (key: string, pattern = /^[\w.-]+$/): string | undefined => {
+    const raw = line(key)
+    return raw !== undefined && pattern.test(raw) ? raw : undefined
+  }
   const owner = value("owner")
   const repo = value("repo")
-  return value("provider") === "github" && owner && repo ? { owner, repo } : null
+  const host = value("host", /^[\w.-]+(:\d+)?$/)
+  const protocol = value("protocol", /^https?$/) as GitHubFeed["protocol"]
+  if (value("provider") !== "github" || !owner || !repo) return null
+  if ((line("host") !== undefined && !host) || (line("protocol") !== undefined && !protocol)) return null
+  return { owner, repo, ...(host && { host }), ...(protocol && { protocol }) }
 }
 
 /**
@@ -80,7 +95,7 @@ export function newestReleaseProvider(Base: typeof GitHubProvider, parseUpdateIn
     private readonly appUpdater: AppUpdater
 
     constructor(_options: unknown, updater: AppUpdater, runtimeOptions: ProviderRuntimeOptions) {
-      super({ provider: "github", owner: feed.owner, repo: feed.repo }, updater, runtimeOptions)
+      super({ provider: "github", ...feed }, updater, runtimeOptions)
       this.appUpdater = updater
     }
 

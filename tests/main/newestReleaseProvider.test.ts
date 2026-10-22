@@ -214,6 +214,21 @@ describe("githubFeedFromAppUpdateYml", () => {
     assert.deepEqual(githubFeedFromAppUpdateYml("owner: StratumServer\nrepo: riftlauncher-update-test\nprovider: github\n"), { owner: "StratumServer", repo: "riftlauncher-update-test" })
   })
 
+  it("keeps the host and the protocol of a feed that is not github.com", () => {
+    assert.deepEqual(githubFeedFromAppUpdateYml("owner: o\nrepo: r\nprovider: github\nhost: ghe.example.com:8443\nprotocol: http\n"), {
+      owner: "o",
+      repo: "r",
+      host: "ghe.example.com:8443",
+      protocol: "http"
+    })
+    assert.deepEqual(githubFeedFromAppUpdateYml("owner: o\nrepo: r\nprovider: github\nhost: ghe.example.com\n"), { owner: "o", repo: "r", host: "ghe.example.com" })
+  })
+
+  it("gives up on a host or a protocol it cannot read, since dropping it would point the feed at github.com", () => {
+    assert.equal(githubFeedFromAppUpdateYml("owner: o\nrepo: r\nprovider: github\nhost: 'ghe.example.com'\n"), null)
+    assert.equal(githubFeedFromAppUpdateYml("owner: o\nrepo: r\nprovider: github\nprotocol: ftp\n"), null)
+  })
+
   it("gives up on anything that is not a plain GitHub feed", () => {
     assert.equal(githubFeedFromAppUpdateYml("provider: generic\nurl: https://example.com/updates\n"), null)
     assert.equal(githubFeedFromAppUpdateYml("owner: StratumServer\nprovider: github\n"), null)
@@ -502,5 +517,42 @@ describe("installNewestReleaseProvider", () => {
     await updater.checkForUpdates().catch(() => undefined)
 
     assert.deepEqual(requests, ["/StratumServer/riftlauncher-update-test/releases.atom"])
+  })
+
+  describe("with a feed on another host", () => {
+    const HOST_YML = `owner: ${OWNER}\nrepo: ${REPO}\nprovider: github\nhost: ghe.example.com:8443\nprotocol: http\n`
+
+    /** Every request as `protocol//host:port/path`, answered as the usual fake feed, with the enterprise API path mapped back to the plain one. */
+    async function checkOnHost(running: string, allowPrerelease: boolean, feed: FakeFeed): Promise<string[]> {
+      writeFileSync(join(temporaryRoot, "resources", "app-update.yml"), HOST_YML)
+      const seen: string[] = []
+      const inner = fakeExecutor(feed, "win32", []) as { request: (options: { path?: string }) => Promise<string> }
+      const updater = newUpdater(running, "win32", {
+        request: (options: { protocol?: string; hostname?: string; port?: string; path?: string }): Promise<string> => {
+          seen.push(`${options.protocol}//${options.hostname}${options.port ? `:${options.port}` : ""}${options.path}`)
+          return inner.request({ ...options, path: (options.path ?? "").replace(`/api/v3/repos/${OWNER}/${REPO}/releases/latest`, `${RELEASES}/latest`) })
+        }
+      })
+      await installNewestReleaseProvider(updater, join(temporaryRoot, "resources"))
+      updater.allowPrerelease = allowPrerelease
+      await updater.checkForUpdates()
+      return seen
+    }
+
+    it("asks that host for the atom feed and the metadata when prereleases are allowed", async () => {
+      const seen = await checkOnHost("1.7.0-beta.14", true, { atom: ["v1.7.0-rc.1", "v1.7.0-beta.14"], published: ["v1.7.0-rc.1", "v1.7.0-beta.14"] })
+
+      assert.deepEqual(seen, [`http://ghe.example.com:8443${RELEASES}.atom`, `http://ghe.example.com:8443${RELEASES}/download/v1.7.0-rc.1/latest.yml`])
+    })
+
+    it("asks that host's API for the latest release, then its metadata, when prereleases are off", async () => {
+      const seen = await checkOnHost("1.7.0-rc.2", false, { atom: ["v1.7.0"], published: ["v1.7.0"], latest: "v1.7.0" })
+
+      assert.deepEqual(seen, [
+        `http://ghe.example.com:8443${RELEASES}.atom`,
+        `http://ghe.example.com:8443/api/v3/repos/${OWNER}/${REPO}/releases/latest`,
+        `http://ghe.example.com:8443${RELEASES}/download/v1.7.0/latest.yml`
+      ])
+    })
   })
 })
