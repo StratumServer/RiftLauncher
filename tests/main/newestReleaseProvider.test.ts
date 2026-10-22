@@ -291,6 +291,35 @@ describe("the release the updater offers", () => {
       feed: { atom: ["v1.7.0", "v1.7.0-rc.2", "v1.7.0-rc.1"], published: ["v1.7.0-rc.1"] },
       offered: null
     },
+    {
+      name: "a beta build newer than every tag in the feed: nothing to offer, and no error",
+      running: "1.7.0-beta.15",
+      prerelease: true,
+      feed: everything(["v1.7.0-beta.14", "v1.7.0-beta.13"]),
+      offered: null
+    },
+    { name: "a stable build newer than every tag in the feed: nothing to offer, and no error", running: "1.8.0", prerelease: true, feed: everything(["v1.7.0", "v1.7.0-rc.1"]), offered: null },
+    {
+      name: "an rc build newer than every tag, with no rc in the feed yet: nothing to offer, and no error",
+      running: "1.7.0-rc.1",
+      prerelease: true,
+      feed: everything(["v1.7.0-beta.14", "v1.6.0"]),
+      offered: null
+    },
+    {
+      name: "a build newer than every tag skips a bare tag at the head of the feed",
+      running: "1.7.0-beta.15",
+      prerelease: true,
+      feed: { atom: ["v1.7.0-beta.14", "v1.7.0-beta.13"], published: ["v1.7.0-beta.13"] },
+      offered: null
+    },
+    {
+      name: "a build newer than every known tag is not offered a tag with an unknown channel",
+      running: "1.7.1",
+      prerelease: true,
+      feed: everything(["v1.8.0-nightly.1", "v1.8.0-0", "v1.7.0"]),
+      offered: null
+    },
     { name: "no downgrade from an rc to the beta it followed", running: "1.7.0-rc.1", prerelease: true, feed: everything(["v1.7.0-rc.1", "v1.7.0-beta.14"]), offered: null },
     { name: "no downgrade from a stable build to an older release", running: "1.7.0", prerelease: true, feed: everything(["v1.7.0", "v1.6.0", "v1.7.0-rc.1"]), offered: null },
     { name: "a tag with an unknown channel is not offered", running: "1.7.0", prerelease: true, feed: everything(["v1.8.0-nightly.1", "v1.7.0"]), offered: null },

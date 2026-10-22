@@ -19,8 +19,9 @@ import type { GitHubProvider } from "electron-updater/out/providers/GitHubProvid
  * This provider keeps everything the stock one does (download URLs, the blockmap of the running
  * version, the signature check) and replaces only the choice of release when prereleases are
  * allowed: the newest tag by semver among stable, alpha, beta and rc that is not older than the
- * running version and whose update metadata exists. electron-updater itself still refuses an
- * offer that is not strictly newer than the running version, so nothing here can downgrade.
+ * running version and whose update metadata exists, or the newest older one when no tag is that
+ * new. electron-updater itself still refuses an offer that is not strictly newer than the running
+ * version, so nothing here can downgrade.
  * With prereleases off the stock code runs untouched: GitHub's own "latest release", which is
  * never a draft or a prerelease.
  */
@@ -107,7 +108,10 @@ export function newestReleaseProvider(Base: typeof GitHubProvider, parseUpdateIn
       const atom = await this.httpRequest(new URL(`${releases}.atom`, this.baseUrl), { accept: "application/xml, application/atom+xml, text/xml, */*" })
       const channelFile = `${this.getDefaultChannelName()}.yml`
 
-      for (const tag of updateCandidateTags(tagsFromReleasesFeed(atom ?? ""), running)) {
+      // A build newer than every tag (a withdrawn release, a build ahead of its own tag) gets the newest older release, which electron-updater refuses: "not available", not an error.
+      const tags = tagsFromReleasesFeed(atom ?? "")
+      const newer = updateCandidateTags(tags, running)
+      for (const tag of newer.length > 0 ? newer : updateCandidateTags(tags, "0.0.0-0")) {
         const url = new URL(`${releases}/download/${tag}/${channelFile}`, this.baseUrl)
         try {
           return { tag, ...parseUpdateInfo(await this.executor.request(this.createRequestOptions(url)), channelFile, url) }
