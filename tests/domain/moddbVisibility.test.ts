@@ -130,10 +130,16 @@ describe("moddbListingVersion", () => {
     assert.equal(moddbListingVersion("1.20.4"), "1.20.4")
   })
 
+  it("leaves an rc as it is, since the listing and the launcher spell it the same", () => {
+    assert.equal(moddbListingVersion("1.7.0-rc.1"), "1.7.0-rc.1")
+    assert.equal(moddbListingVersion("1.7.0-rc.10"), "1.7.0-rc.10")
+    assert.equal(moddbListingVersion("2.0.0-rc.2"), "2.0.0-rc.2")
+  })
+
   it("leaves anything else alone rather than guessing at a name", () => {
     // No entry will be found for these, which is a case the count already handles: nothing is
     // counted and nothing is recorded as counted.
-    for (const version of ["1.7.0-rc.1", "1.7.0-beta", "1.7.0-beta.x", "1.7.0-beta.10+build.4", ""]) {
+    for (const version of ["1.7.0-beta", "1.7.0-beta.x", "1.7.0-beta.10+build.4", "1.7.0-alpha.1", ""]) {
       assert.equal(moddbListingVersion(version), version, version)
     }
   })

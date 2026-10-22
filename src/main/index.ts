@@ -24,6 +24,7 @@ import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecu
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
+import { installNewestReleaseProvider } from "@src/main/newestReleaseProvider"
 import { basicPasswordStoreSwitch } from "@domain/account/sessionStorage"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
@@ -401,13 +402,23 @@ app.whenReady().then(async () => {
     // it arms does not go out for another five seconds, and every renderer-facing update channel
     // refuses to act until an offer has been made through the events registered here.
     void loadAutoUpdater()
-      .then((autoUpdater) => {
+      .then(async (autoUpdater) => {
+        // electron-updater's own pick of a prerelease knows alpha and beta and nothing else, so an
+        // -rc tag is skipped by a beta and never followed by a stable release. This swaps in a
+        // provider that takes the newest of stable, beta and rc. If it cannot be set up the stock
+        // provider stays: updates keep working, minus rc support.
+        try {
+          if (!(await installNewestReleaseProvider(autoUpdater))) logMessage("warn", `${LOG_PREFIX} [whenReady] app-update.yml is not a GitHub feed, keeping the stock update provider.`)
+        } catch (error) {
+          logMessage("warn", `${LOG_PREFIX} [whenReady] Could not set up the release provider, keeping the stock one: ${getErrorMessage(error)}.`)
+        }
+
         registerAutoUpdaterEvents(autoUpdater, (channel, payload) => {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
         })
 
-        // Who gets offered a beta, said out loud rather than left to electron-updater, which reads
-        // it off the running version alone: that leaves someone on a stable build with no way to
+        // Who gets offered a beta or an rc, said out loud rather than left to electron-updater, which
+        // reads it off the running version alone: that leaves someone on a stable build with no way to
         // ask for betas, and someone who tried one beta signed up for every beta after it. The
         // stored answer wins when there is one, and the running version still decides when there
         // is not. Read inside the callback, so the answer the check uses is the one the settings
