@@ -2,7 +2,7 @@ import { win32 } from "node:path"
 
 import { app, ipcMain } from "electron"
 
-import type { AppUpdater } from "electron-updater"
+import type { AppUpdater, NsisUpdater } from "electron-updater"
 
 import { IPC_CHANNELS } from "../ipcChannels"
 import { isTrustedIpcSender } from "@src/ipc/ipcSecurity"
@@ -122,7 +122,7 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
         logMessage("info", "[back] [appUpdater] [ipc/handlers/appUpdaterHandlers.ts] [UPDATE_AND_RESTART] Restart refused: the app cannot close yet.")
         return
       }
-      if (process.platform === "win32") (autoUpdater as AppUpdater & { installDirectory?: string }).installDirectory = win32.dirname(app.getPath("exe"))
+      if (process.platform === "win32") (autoUpdater as AppUpdater & Pick<NsisUpdater, "installDirectory">).installDirectory = win32.dirname(app.getPath("exe"))
       autoUpdater.quitAndInstall(true, true)
     })
     .catch(() => {
