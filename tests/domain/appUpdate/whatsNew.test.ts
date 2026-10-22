@@ -388,6 +388,41 @@ describe("selectReleasesToShow", () => {
     )
   })
 
+  it("follows a beta to an rc, an rc to the next rc, and an rc to the stable release", () => {
+    const releases = [
+      release({ tag: "v1.7.0" }),
+      release({ tag: "v1.7.0-rc.2", prerelease: true }),
+      release({ tag: "v1.7.0-rc.1", prerelease: true }),
+      release({ tag: "v1.7.0-beta.14", prerelease: true })
+    ]
+
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0-beta.14", "1.7.0-rc.1").map((r) => r.tag),
+      ["v1.7.0-rc.1"]
+    )
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0-rc.1", "1.7.0-rc.2").map((r) => r.tag),
+      ["v1.7.0-rc.2"]
+    )
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0-rc.2", "1.7.0").map((r) => r.tag),
+      ["v1.7.0"]
+    )
+  })
+
+  it("hides the rcs from a stable running version, and shows every step of a jump from a beta to an rc", () => {
+    const releases = [release({ tag: "v1.7.0" }), release({ tag: "v1.7.0-rc.1", prerelease: true }), release({ tag: "v1.7.0-beta.14", prerelease: true })]
+
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.6.0", "1.7.0").map((r) => r.tag),
+      ["v1.7.0"]
+    )
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0-beta.13", "1.7.0-rc.1").map((r) => r.tag),
+      ["v1.7.0-rc.1", "v1.7.0-beta.14"]
+    )
+  })
+
   it("ranks a plain release above every prerelease of the same version", () => {
     // The current version is itself a prerelease, so the prerelease-inclusion rule above lets
     // both entries through; what this pins is the tie-break between them once it does.
@@ -458,6 +493,15 @@ describe("selectLatestReleases", () => {
     assert.deepEqual(
       selectLatestReleases(releases, "1.3.0-beta.2").map((r) => r.tag),
       ["1.3.0-beta.1", "1.2.0"]
+    )
+  })
+
+  it("lists an rc build's rc and beta notes newest first", () => {
+    const releases = [release({ tag: "v1.7.0-beta.14", prerelease: true }), release({ tag: "v1.7.0-rc.1", prerelease: true }), release({ tag: "v1.7.0-rc.2", prerelease: true })]
+
+    assert.deepEqual(
+      selectLatestReleases(releases, "1.7.0-rc.2").map((r) => r.tag),
+      ["v1.7.0-rc.2", "v1.7.0-rc.1", "v1.7.0-beta.14"]
     )
   })
 
