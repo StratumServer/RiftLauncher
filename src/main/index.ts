@@ -23,6 +23,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
+import { createBeforeQuitHandler } from "@src/main/quitGate"
 import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
 import { installNewestReleaseProvider } from "@src/main/newestReleaseProvider"
 import { basicPasswordStoreSwitch } from "@domain/account/sessionStorage"
@@ -455,21 +456,7 @@ app.on("window-all-closed", () => {
   }
 })
 
-let isWaitingForConfigFlush = false
-
-app.on("before-quit", (event) => {
-  // Null unless an Inno extraction is running: that worker is asked to stop and let go of its
-  // native stream first, because ending the thread under it aborts the launcher (#758).
-  const workersEnding = terminateActiveWorkers()
-
-  if (isWaitingForConfigFlush) return
-  const pendingConfigWrite = flushConfigWrites()
-  if (pendingConfigWrite === null && workersEnding === null) return
-
-  event.preventDefault()
-  isWaitingForConfigFlush = true
-  void Promise.allSettled([pendingConfigWrite, workersEnding]).then(() => app.quit())
-})
+app.on("before-quit", createBeforeQuitHandler({ terminateWorkers: terminateActiveWorkers, flushConfigWrites, quit: () => app.quit() }))
 
 async function saveCurrentWindowState(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return

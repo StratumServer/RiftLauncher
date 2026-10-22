@@ -57,6 +57,9 @@ vi.mock("@src/ipc/workers/nativeLzma2", () => ({ loadNativeLzma2DecoderFactory: 
 /** RUN_INSTALLER's own bound on the fallback spawn, mirrored from pathsHandlers.ts (not exported). */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
+/** WORKER_TIMEOUTS_MS.RUN_INSTALLER, mirrored from pathsHandlers.ts (not exported). */
+const RUN_INSTALLER_EXTRACTION_TIMEOUT_MS = 30 * 60 * 1_000
+
 let nextLeaseToken = 1
 
 /** The mocked `acquireWorker`, as the concurrency tests below pass it around. */
@@ -172,6 +175,8 @@ beforeEach(async () => {
   vi.mocked(acquireWorker).mockReset()
   const { spawn } = await import("child_process")
   vi.mocked(spawn).mockReset()
+  const { loadNativeLzma2DecoderFactory } = await import("@src/ipc/workers/nativeLzma2")
+  vi.mocked(loadNativeLzma2DecoderFactory).mockClear()
 
   vi.resetModules()
   await import("@src/ipc/handlers/pathsHandlers")
@@ -256,6 +261,86 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
       false,
       `expected no cleanup warning line, got: ${warnLines.join(" / ")}`
     )
+  })
+
+  it("acquires the Inno worker as cancellable, so the pool can ask it to stop (#758)", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-cancellable", installerPath, versionsFolder, false)
+
+    const worker = await workerPromise
+    worker.emit("message", { type: "finished", verdict: "extracted", filesWritten: 1, bytesWritten: 1 })
+    await resultPromise
+
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls[0]?.[0], "innoExtractWorker-path")
+    assert.deepEqual(vi.mocked(acquireWorker).mock.calls[0]?.[2], { cancellable: true })
+  })
+
+  it("releases the worker as cancel, not discard, when the extraction times out (#758)", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const release = vi.fn()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    // Fake timers go in at the moment of the acquire: runTrackedWorker sets its bound right
+    // after it, and the config read before it needs real timers.
+    vi.mocked(acquireWorker).mockImplementationOnce(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+      return { worker: new EventEmitter() as unknown as Worker, token: nextLeaseToken++, dispatch: vi.fn(), release }
+    })
+
+    const event = await createTrustedEvent()
+    const settled = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-timeout", installerPath, versionsFolder, false).then(
+      () => undefined,
+      () => undefined
+    )
+    await vi.waitFor(() => assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1))
+    await vi.advanceTimersByTimeAsync(RUN_INSTALLER_EXTRACTION_TIMEOUT_MS)
+    await settled
+
+    assert.deepEqual(release.mock.calls, [["cancel"]])
+  })
+
+  it("does not release as cancel before the bound elapses", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const release = vi.fn()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    vi.mocked(acquireWorker).mockImplementationOnce(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+      return { worker: new EventEmitter() as unknown as Worker, token: nextLeaseToken++, dispatch: vi.fn(), release }
+    })
+
+    const event = await createTrustedEvent()
+    void handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-early", installerPath, versionsFolder, false).catch(() => undefined)
+    await vi.waitFor(() => assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1))
+    await vi.advanceTimersByTimeAsync(RUN_INSTALLER_EXTRACTION_TIMEOUT_MS - 1_000)
+
+    assert.equal(release.mock.calls.length, 0)
+  })
+
+  it("releases the worker for reuse-or-discard, never cancel, when the extraction finishes normally", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const release = vi.fn()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    const worker = new EventEmitter()
+    vi.mocked(acquireWorker).mockImplementationOnce(() => ({ worker: worker as unknown as Worker, token: nextLeaseToken++, dispatch: vi.fn(), release }))
+
+    const event = await createTrustedEvent()
+    const resultPromise = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-normal", installerPath, versionsFolder, false)
+    await vi.waitFor(() => assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1))
+    worker.emit("message", { type: "finished", verdict: "extracted", filesWritten: 1, bytesWritten: 1 })
+    await resultPromise
+
+    assert.equal(release.mock.calls.length, 1)
+    assert.notEqual(release.mock.calls[0]?.[0], "cancel")
   })
 
   it("loads the native LZMA2 addon on the main thread before the extraction worker starts", async () => {

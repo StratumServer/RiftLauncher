@@ -20,6 +20,11 @@ const settleMs = Number(settleArg)
 const payload = readFileSync(file)
 const require = createRequire(import.meta.url)
 
+// Keep the addon loaded on the main thread, as pathsHandlers does in production. Node unloads an
+// addon when the last worker that loaded it exits, and napi-rs before 3.12.1 then faults on
+// Windows (0xC0000005, #756), which is not the #758 abort this fixture measures.
+require("@napi-rs/lzma/lzma2")
+
 const workerSource = `
 const { parentPort, workerData } = require("node:worker_threads")
 const { decompressStream } = require(workerData.addon)
