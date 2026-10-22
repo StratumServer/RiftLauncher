@@ -20,6 +20,7 @@ import {
 } from "@domain/moddbVisibility"
 import { getConfig, saveConfig } from "@src/config/configManager"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
+import { isQuitGoingToBeVetoed } from "@src/utils/shouldPreventClose"
 
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/netHandlers.ts]"
 
@@ -58,8 +59,11 @@ const queryConcurrency = new ConcurrencyLimiter(QUERY_URL_CONCURRENCY_LIMIT)
 
 // Same reason pathsHandlers.ts shuts its limiters down here: before-quit can preventDefault
 // (the config flush in main/index.ts), so a queued lookup could otherwise still be handed a
-// slot and start a fresh request while the app is on its way out.
+// slot and start a fresh request while the app is on its way out. When a close guard is going
+// to veto the quit instead (#702), the lane has to keep admitting work, or every later lookup
+// in the session fails (#758).
 app.on("before-quit", () => {
+  if (isQuitGoingToBeVetoed()) return
   queryConcurrency.shutdown()
 })
 

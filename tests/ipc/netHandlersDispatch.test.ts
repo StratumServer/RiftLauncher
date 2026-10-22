@@ -28,6 +28,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  */
 const mockState = vi.hoisted(() => ({
   userDataDir: "",
+  quitListeners: [] as Array<() => void>,
   requestHandler: (options: unknown): FakeRequest => {
     void options
     throw new Error("no fake request handler configured for this test")
@@ -38,8 +39,10 @@ vi.mock("electron", () => ({
   app: {
     getPath: (name: string): string => (name === "userData" ? mockState.userDataDir : tmpdir()),
     isPackaged: true,
-    // netHandlers.ts registers its limiter shutdown on before-quit; nothing here quits.
-    on: (): void => {}
+    // netHandlers.ts registers its limiter shutdown on before-quit. Captured so a test can fire it.
+    on: (event: string, listener: () => void): void => {
+      if (event === "before-quit") mockState.quitListeners.push(listener)
+    }
   },
   ipcMain: {
     handle: (channel: string, listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void => {
@@ -116,6 +119,7 @@ type QueryUrlHandler = (event: IpcMainInvokeEvent, url: unknown) => Promise<stri
 
 describe("QUERY_URL ipcMain.handle wrapper", () => {
   beforeEach(async () => {
+    mockState.quitListeners.length = 0
     mockState.userDataDir = mkdtempSync(join(tmpdir(), "riftlauncher-net-dispatch-"))
     // Importing netHandlers.ts calls ipcMain.handle at module load, which the
     // mock above wires straight into ipcHandlerRegistry.
@@ -125,6 +129,24 @@ describe("QUERY_URL ipcMain.handle wrapper", () => {
   afterEach(() => {
     rmSync(mockState.userDataDir, { recursive: true, force: true })
     vi.resetModules()
+  })
+
+  it("stops admitting lookups on a quit nothing vetoes, and keeps admitting them when a close guard is held (#758)", async () => {
+    const handler = getIpcHandler<QueryUrlHandler>(IPC_CHANNELS.NET_MANAGER.QUERY_URL)
+    const event = await createTrustedEvent()
+    const { setShouldPreventClose } = await import("@src/utils/shouldPreventClose")
+    respondWith({ kind: "success", body: '["tag-a"]' })
+
+    setShouldPreventClose("add", "net-test-guard", "a task holds the close")
+    try {
+      for (const listener of mockState.quitListeners) listener()
+    } finally {
+      setShouldPreventClose("remove", "net-test-guard", "released")
+    }
+    assert.equal(await handler(event, TAGS_URL), '["tag-a"]')
+
+    for (const listener of mockState.quitListeners) listener()
+    await assert.rejects(() => handler(event, TAGS_URL), /Cancelled because the app is quitting/)
   })
 
   it("throws Unauthorized IPC sender for an untrusted caller, before ever making a request", async () => {

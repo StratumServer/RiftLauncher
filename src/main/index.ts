@@ -14,7 +14,7 @@ import fse from "fs-extra"
 import { readLinuxPackageType } from "@src/main/linuxPackageType"
 
 import { ensureConfig, flushConfigWrites, getConfig, noteUserDataImportFailed, saveConfig } from "@src/config/configManager"
-import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
+import { getShouldPreventClose, isQuitGoingToBeVetoed, setCloseVetoWindowProbe } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
@@ -456,7 +456,19 @@ app.on("window-all-closed", () => {
   }
 })
 
-app.on("before-quit", createBeforeQuitHandler({ terminateWorkers: terminateActiveWorkers, flushConfigWrites, quit: () => app.quit() }))
+// The window's close handler is what vetoes a quit, so a held close guard only holds the quit while
+// there is a window to veto it. The handlers' own before-quit listeners ask the same question.
+setCloseVetoWindowProbe(() => Boolean(mainWindow) && !mainWindow.isDestroyed())
+
+app.on(
+  "before-quit",
+  createBeforeQuitHandler({
+    terminateWorkers: terminateActiveWorkers,
+    flushConfigWrites,
+    closeGuardHoldsQuit: isQuitGoingToBeVetoed,
+    quit: () => app.quit()
+  })
+)
 
 async function saveCurrentWindowState(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return

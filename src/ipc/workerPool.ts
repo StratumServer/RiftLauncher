@@ -23,7 +23,7 @@ export interface WorkerLease {
   /** Posts the task. Call it last, only once the caller's own listeners are attached. */
   dispatch(payload: object): void
   /** Ends the lease. Idempotent: only the first call counts. */
-  release(disposition: WorkerDisposition): void
+  release(disposition: WorkerDisposition): Promise<void> | null
 }
 
 interface PooledWorker {
@@ -130,10 +130,10 @@ export class WorkerPool {
       dispatch: (payload: object): void => {
         pooled.worker.postMessage({ type: "task", token, payload })
       },
-      release: (disposition: WorkerDisposition): void => {
-        if (released) return
+      release: (disposition: WorkerDisposition): Promise<void> | null => {
+        if (released) return null
         released = true
-        this.returnWorker(pooled, disposition, maxIdle)
+        return this.returnWorker(pooled, disposition, maxIdle)
       }
     }
   }
@@ -196,18 +196,15 @@ export class WorkerPool {
     return pooled
   }
 
-  private returnWorker(pooled: PooledWorker, disposition: WorkerDisposition, maxIdle: number): void {
-    if (pooled.state === "dead") return
+  private returnWorker(pooled: PooledWorker, disposition: WorkerDisposition, maxIdle: number): Promise<void> | null {
+    if (pooled.state === "dead") return null
     pooled.tasksRun++
 
-    if (disposition === "cancel" && pooled.cancellable) {
-      void this.endGracefully(pooled)
-      return
-    }
+    if (disposition === "cancel" && pooled.cancellable) return this.endGracefully(pooled)
 
     if (disposition === "cancel" || disposition === "discard" || this.shuttingDown || pooled.tasksRun >= this.maxTasksPerWorker) {
       this.forget(pooled)
-      return
+      return null
     }
 
     let idleList = this.idle.get(pooled.scriptPath)
@@ -217,7 +214,7 @@ export class WorkerPool {
     }
     if (idleList.length >= maxIdle) {
       this.forget(pooled)
-      return
+      return null
     }
 
     pooled.state = "idle"
@@ -226,6 +223,7 @@ export class WorkerPool {
     idleTimer.unref()
     pooled.idleTimer = idleTimer
     idleList.push(pooled)
+    return null
   }
 
   /**
@@ -256,6 +254,11 @@ export class WorkerPool {
         const expired = pooled.state !== "dead"
         try {
           if (expired) this.onCancelGraceExpired?.(pooled.scriptPath)
+        } catch {
+          // The hook only reports. Swallowed on purpose: this runs in a timer, so letting it
+          // escape would crash the process with the worker still running, and skipping `done`
+          // would leave the worker live and `ending` unsettled. The pool has no logger by design
+          // (no Electron import here), so the host's hook is the thing that must not throw.
         } finally {
           done()
         }

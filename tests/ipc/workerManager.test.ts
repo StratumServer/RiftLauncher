@@ -25,5 +25,9 @@ describe("workerManager", () => {
     assert.equal(mocks.logMessage.mock.calls.length, 1)
     assert.equal(mocks.logMessage.mock.calls[0]![0], "warn")
     assert.match(String(mocks.logMessage.mock.calls[0]![1]), /did not confirm in time/)
+    // Same three-part tag as every other main-process line: area, then the file the line is in.
+    // The pool has no logger of its own on purpose (it would have to import Electron), so the
+    // one line it can never write is this one, and a line without the tag is unsourceable.
+    assert.match(String(mocks.logMessage.mock.calls[0]![1]), /^\[back\] \[ipc\] \[ipc\/workerManager\.ts\] /)
   })
 })

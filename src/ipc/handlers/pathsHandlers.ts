@@ -23,6 +23,7 @@ import { getCachedOptimumManifest, getTrustedOverlayHash } from "@src/ipc/optimu
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+import { isQuitGoingToBeVetoed } from "@src/utils/shouldPreventClose"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -115,6 +116,11 @@ const archiveConcurrency = new ConcurrencyLimiter(ARCHIVE_CONCURRENCY_LIMIT)
 // queued task rejects immediately, and any DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH
 // call that arrives after this point rejects on arrival instead of queueing behind it.
 app.on("before-quit", () => {
+  // A held close guard vetoes this quit in the window's close handler, which runs after this
+  // event (#702), and a shut-down lane never reopens: the launcher would survive with every
+  // later download and archive call refused (#758). So leave them alone when the quit cannot
+  // happen, and shut them down on the quit that does.
+  if (isQuitGoingToBeVetoed()) return
   downloadConcurrency.shutdown()
   archiveConcurrency.shutdown()
 })
@@ -168,7 +174,13 @@ function runTrackedWorker<T>(
   workerPath: string,
   workerData: object,
   operation: string,
-  onFinished: (message: WorkerMessage) => T
+  onFinished: (message: WorkerMessage) => T,
+  /**
+   * Handed the promise that settles once a `cancel` release has actually stopped the worker.
+   * RUN_INSTALLER's payload read keeps its archive lane slot until then, so a cancelled worker
+   * that is still winding down cannot overlap a third archive operation on a two-slot lane (#758).
+   */
+  onCancelEnding?: (ending: Promise<void>) => void
 ): Promise<T> {
   const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operation] ?? 0, { cancellable: CANCELLABLE_WORKERS.has(workerPath) })
   const worker = lease.worker
@@ -197,7 +209,8 @@ function runTrackedWorker<T>(
       worker.off("message", onMessage)
       worker.off("error", onError)
       worker.off("exit", onExit)
-      lease.release(disposition)
+      const ending = lease.release(disposition)
+      if (ending) onCancelEnding?.(ending)
     }
 
     const resolveOnce = (value: T): void => {
@@ -556,41 +569,54 @@ async function extractInstallerPayload(
     // @napi-rs/lzma ships a build against napi 3.12.1 or later.
     await loadNativeLzma2DecoderFactory()
 
-    return await archiveConcurrency.run(() => {
+    return await archiveConcurrency.run(async () => {
       // Inside the slot, not before it: a 0 tick flips TaskManagerContext's task from
       // "pending" to "in-progress" at 0%, and a read still waiting for a slot has not
       // started. Pending is what a queued task is supposed to look like.
       sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
 
-      return runTrackedWorker(
-        event,
-        safeId,
-        IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
-        innoExtractWorker,
-        { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
-        "RUN_INSTALLER",
-        (message) => {
-          if (message.verdict === "format-refused") {
-            const reason = typeof message.reason === "string" ? message.reason : "no reason given"
-            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
-            return "format-refused"
+      let cancellation: Promise<void> | undefined
+      try {
+        return await runTrackedWorker(
+          event,
+          safeId,
+          IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+          innoExtractWorker,
+          { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
+          "RUN_INSTALLER",
+          (message) => {
+            if (message.verdict === "format-refused") {
+              const reason = typeof message.reason === "string" ? message.reason : "no reason given"
+              logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+              return "format-refused"
+            }
+            if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
+            logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+            // The game is already on disk by the time this can be set: a failed post-copy
+            // cleanup (installer deletion, staging folder removal) does not turn "extracted"
+            // into "failed" (#528), it only surfaces here as a warning. Two fixed reason
+            // tokens (installer-delete-failed, staging-cleanup-failed) plus the errno the
+            // cleanup call actually failed with, so a support answer does not have to guess.
+            if (message.cleanupWarning && typeof message.cleanupWarning === "object") {
+              const warning = message.cleanupWarning as { reason?: unknown; code?: unknown }
+              const reason = typeof warning.reason === "string" ? warning.reason : "unknown"
+              const code = typeof warning.code === "string" ? warning.code : "unknown"
+              logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Cleanup after installer extraction failed; the game is installed. reason=${reason} code=${code}`)
+            }
+            return "extracted"
+          },
+          (ending) => {
+            cancellation = ending
           }
-          if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
-          logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
-          // The game is already on disk by the time this can be set: a failed post-copy
-          // cleanup (installer deletion, staging folder removal) does not turn "extracted"
-          // into "failed" (#528), it only surfaces here as a warning. Two fixed reason
-          // tokens (installer-delete-failed, staging-cleanup-failed) plus the errno the
-          // cleanup call actually failed with, so a support answer does not have to guess.
-          if (message.cleanupWarning && typeof message.cleanupWarning === "object") {
-            const warning = message.cleanupWarning as { reason?: unknown; code?: unknown }
-            const reason = typeof warning.reason === "string" ? warning.reason : "unknown"
-            const code = typeof warning.code === "string" ? warning.code : "unknown"
-            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Cleanup after installer extraction failed; the game is installed. reason=${reason} code=${code}`)
-          }
-          return "extracted"
-        }
-      )
+        )
+      } finally {
+        // The slot is held until a cancelled worker has stopped or run out of grace: its thread
+        // is still decoding the installer, so handing the slot back at the timeout would put a
+        // third archive worker on a lane whose bound is two (#758). Bounded in practice by the
+        // cancel that `installerFile.read` already obeys, and in the worst case by the pool's
+        // grace period.
+        if (cancellation) await cancellation.catch(() => undefined)
+      }
     })
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)

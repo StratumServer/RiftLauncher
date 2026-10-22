@@ -7,8 +7,10 @@ import type { AcquireOptions, WorkerLease } from "@src/ipc/workerPool"
 
 export type { WorkerDisposition, WorkerLease } from "@src/ipc/workerPool"
 
+const LOG_PREFIX = "[back] [ipc] [ipc/workerManager.ts]"
+
 const pool = new WorkerPool((scriptPath) => new Worker(scriptPath), {
-  onCancelGraceExpired: (): void => logMessage("warn", `[back] [ipc/workerManager.ts] A cancelled worker did not confirm in time and was terminated mid-task.`)
+  onCancelGraceExpired: (): void => logMessage("warn", `${LOG_PREFIX} A cancelled worker did not confirm in time and was terminated mid-task.`)
 })
 
 /**
@@ -23,6 +25,10 @@ export function acquireWorker(scriptPath: string, maxIdle: number, options?: Acq
  * Ends every worker. Workers that cannot be told to stop their task are terminated before this
  * returns; the promise, null when there is none, settles once the ones that can have stopped
  * (#758) have, or ran out of grace.
+ *
+ * A worker that is already cancelling is waited on, not terminated: this is the second call on
+ * quit, because this module registers its handler before main/index.ts registers its own, and
+ * ending the thread under the native read is the #758 crash.
  */
 export function terminateActiveWorkers(): Promise<void> | null {
   return pool.terminateAll()
