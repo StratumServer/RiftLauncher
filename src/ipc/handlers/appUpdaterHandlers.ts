@@ -1,4 +1,8 @@
-import { ipcMain } from "electron"
+import { win32 } from "node:path"
+
+import { app, ipcMain } from "electron"
+
+import type { AppUpdater, NsisUpdater } from "electron-updater"
 
 import { IPC_CHANNELS } from "../ipcChannels"
 import { isTrustedIpcSender } from "@src/ipc/ipcSecurity"
@@ -99,6 +103,13 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
 // is left set, and UPDATE_DOWNLOADED is sent again: the renderer marks the notification answered on
 // the click and hides its button for good, so without a new one the player could not restart in
 // this session. The renderer treats the event as idempotent and offers the restart afresh.
+//
+// On Windows the installer is told where the running copy lives (#734). electron-updater adds /D=
+// only when installDirectory is set, and without it the NSIS template takes the target folder from
+// InstallLocation in the registry. A portable copy without an entry for this Windows account then
+// gets a second launcher in %LOCALAPPDATA%\Programs\RiftLauncher, started on an empty profile
+// because no marker sits beside it, while the portable copy stays on the old version. The running
+// copy's folder is the right target for every Windows install, so it is set for all of them.
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
   if (!isTrustedIpcSender(event) || !updateDownloaded) return
   void loadAutoUpdater()
@@ -111,6 +122,7 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
         logMessage("info", "[back] [appUpdater] [ipc/handlers/appUpdaterHandlers.ts] [UPDATE_AND_RESTART] Restart refused: the app cannot close yet.")
         return
       }
+      if (process.platform === "win32") (autoUpdater as AppUpdater & Pick<NsisUpdater, "installDirectory">).installDirectory = win32.dirname(app.getPath("exe"))
       autoUpdater.quitAndInstall(true, true)
     })
     .catch(() => {

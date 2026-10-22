@@ -32,18 +32,25 @@ const mockState = vi.hoisted(() => {
   const quitAndInstall = vi.fn()
   return {
     userDataDir: "",
+    exePath: "D:\\Games\\RiftLauncher\\RiftLauncher.exe",
     onListeners: new Map<string, (...args: unknown[]) => void>(),
     /** How many times electron-updater has really been imported. See the "loading it at all" block. */
     updaterImports: 0,
     downloadUpdate,
     quitAndInstall,
-    autoUpdater: { autoDownload: true, downloadUpdate, quitAndInstall, on: (): void => {} }
+    autoUpdater: { autoDownload: true, downloadUpdate, quitAndInstall, on: (): void => {} } as {
+      autoDownload: boolean
+      downloadUpdate: typeof downloadUpdate
+      quitAndInstall: typeof quitAndInstall
+      on: () => void
+      installDirectory?: string
+    }
   }
 })
 
 vi.mock("electron", () => {
   const app = {
-    getPath: (): string => mockState.userDataDir,
+    getPath: (name: string): string => (name === "exe" ? mockState.exePath : mockState.userDataDir),
     getAppPath: (): string => mockState.userDataDir,
     isPackaged: false,
     name: "RiftLauncher",
@@ -116,6 +123,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // clearAllMocks keeps an implementation a test installed, and the throwing one would leak into the tests after it.
   mockState.quitAndInstall.mockReset()
+  delete mockState.autoUpdater.installDirectory
   temporaryRoot = mkdtempSync(join(tmpdir(), "app-updater-handlers-"))
   mockState.userDataDir = join(temporaryRoot, "userData")
 })
@@ -302,6 +310,70 @@ describe("UPDATE_AND_RESTART", () => {
     // (isSilent, isForceRunAfter), both true on purpose. Not silent, the Windows installer opens its
     // assisted wizard and waits for two clicks, and electron-updater drops the second argument.
     assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [true, true])
+  })
+
+  // Without /D= the NSIS installer takes the target folder from the registry, and a portable copy
+  // with no entry for this Windows account gets a second launcher on an empty profile (#734).
+  // electron-updater passes /D= only when installDirectory is set.
+  it.each([
+    ["a portable copy on another drive", "D:\\Games\\RiftLauncher\\RiftLauncher.exe", "D:\\Games\\RiftLauncher"],
+    ["a per-user install", "C:\\Users\\Alex\\AppData\\Local\\Programs\\RiftLauncher\\RiftLauncher.exe", "C:\\Users\\Alex\\AppData\\Local\\Programs\\RiftLauncher"]
+  ])("on Windows, points the installer at the running copy's folder for %s (#734)", async (_label, exePath, folder) => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { value: "win32" })
+    try {
+      mockState.exePath = exePath
+      const handlers = await loadHandlers()
+      handlers.markUpdateDownloaded()
+      const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+      let directoryAtInstall: string | undefined
+      mockState.quitAndInstall.mockImplementation(() => {
+        directoryAtInstall = mockState.autoUpdater.installDirectory
+      })
+      await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+      assert.equal(directoryAtInstall, folder)
+      assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [true, true])
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+    }
+  })
+
+  it("leaves installDirectory alone off Windows, where the updater replaces the AppImage or package in place (#734)", async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { value: "linux" })
+    try {
+      const handlers = await loadHandlers()
+      handlers.markUpdateDownloaded()
+      const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+      await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+      assert.equal(mockState.quitAndInstall.mock.calls.length, 1)
+      assert.equal(mockState.autoUpdater.installDirectory, undefined)
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+    }
+  })
+
+  it("does not set installDirectory while the close guard refuses the restart (#734)", async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { value: "win32" })
+    try {
+      const handlers = await loadHandlers()
+      const { setShouldPreventClose } = await import("@src/utils/shouldPreventClose")
+      handlers.markUpdateDownloaded()
+      setShouldPreventClose("add", "task-1", "Started Update all.")
+      const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+      await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+      assert.equal(mockState.quitAndInstall.mock.calls.length, 0)
+      assert.equal(mockState.autoUpdater.installDirectory, undefined)
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+    }
   })
 
   it("forgets the downloaded update when quitAndInstall throws, so a retry is refused rather than looping", async () => {
