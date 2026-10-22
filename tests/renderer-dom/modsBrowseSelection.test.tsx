@@ -329,12 +329,12 @@ describe("ModDB browse selection", () => {
     const user = userEvent.setup()
     const other = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b" }
     let holdA = false
-    let releaseA!: () => void
+    const heldA: (() => void)[] = []
     const { getInstalledMods, downloadOnPath, deletePath } = mount({
       others: [other],
       folder: async (path) => {
         if (!path.includes("/games/a")) return []
-        if (holdA) await new Promise<void>((resolve) => (releaseA = resolve))
+        if (holdA) await new Promise<void>((resolve) => heldA.push(resolve))
         return [aCopy("deepercaves", "Deeper Caves", "1.0.0")]
       }
     })
@@ -353,7 +353,8 @@ describe("ModDB browse selection", () => {
     await user.click(screen.getByRole("button", { name: "Switch Installation" }))
     await waitFor(() => expect(getInstalledMods.mock.calls.some(([path]) => String(path).includes("/games/b"))).toBe(true), { timeout: 3000 })
     holdA = false
-    await act(async () => releaseA())
+    // ConfigProvider counts every Installation's mods 2.5 s after loading, and that read of A can park here too.
+    await act(async () => heldA.forEach((release) => release()))
     await waitFor(() => expect(installSelected().getAttribute("aria-busy")).not.toBe("true"), { timeout: 3000 })
 
     // A's folder read never becomes a run on B, which would delete A's archive and download into B.
