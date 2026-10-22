@@ -1,5 +1,8 @@
 /**
- * Who gets offered a beta build when the launcher checks for updates.
+ * Who gets offered a beta or an rc build when the launcher checks for updates.
+ *
+ * "Allowed" means the newest release among stable, beta and rc (src/main/newestReleaseProvider.ts),
+ * not electron-updater's own channel rule, which only knows alpha and beta.
  *
  * Left alone, electron-updater answers this from the running version and nothing else: its
  * `allowPrerelease` getter is true exactly when the version the app is running carries prerelease

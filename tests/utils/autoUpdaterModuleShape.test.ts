@@ -23,6 +23,8 @@ import { beforeAll, describe, it } from "vitest"
  */
 
 interface ModuleShapeResult {
+  githubProviderIsClass: boolean
+  parseUpdateInfoIsFunction: boolean
   hasOwnNamedAutoUpdater: boolean
   hasDefaultAutoUpdaterDescriptor: boolean
   resolvedFrom: "named" | "default" | "neither"
@@ -92,5 +94,19 @@ describe("the loader's resolution, mod.autoUpdater ?? mod.default.autoUpdater", 
   it("yields an object whose checkForUpdates, downloadUpdate, quitAndInstall and on are all functions", () => {
     for (const method of ["checkForUpdates", "downloadUpdate", "quitAndInstall", "on"] as const)
       assert.equal(result.resolvedMethods[method], true, `expected the autoUpdater resolved via "${result.resolvedFrom}" to have a callable ${method}`)
+  })
+})
+
+describe("the module files src/main/newestReleaseProvider.ts loads by deep path", () => {
+  it("exposes GitHubProvider as a class under node's own ESM interop", () => {
+    assert.equal(
+      result.githubProviderIsClass,
+      true,
+      'import("electron-updater/out/providers/GitHubProvider.js") no longer has a named GitHubProvider class: src/main/newestReleaseProvider.ts, which extends it, cannot load, and the launcher falls back to the stock provider that skips -rc tags'
+    )
+  })
+
+  it("exposes parseUpdateInfo", () => {
+    assert.equal(result.parseUpdateInfoIsFunction, true, 'import("electron-updater/out/providers/Provider.js") no longer has a named parseUpdateInfo function')
   })
 })

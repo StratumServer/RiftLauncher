@@ -138,8 +138,10 @@ export function rememberCountedVersion(state: ModDbVisibilityState, version: str
  *
  * The ModDB rejects a `modversion` it cannot read as its own flavour of semver, so the entries are
  * named `1.7.0-pre.10` where the launcher's own version is `1.7.0-beta.10`. A stable `x.y.z` is
- * named the same on both sides and passes through untouched, and so does anything else: an entry
- * named for it simply will not be found, which is already a case this feature handles.
+ * named the same on both sides and passes through untouched. So does an `-rc.N`: the game and the
+ * ModDB already spell it that way (src/domain/versions/detect.ts), so the listing entry
+ * for `1.7.0-rc.1` is named `1.7.0-rc.1`. Anything else passes through too: an entry named for it
+ * simply will not be found, which is already a case this feature handles.
  */
 const BETA_SUFFIX = /-beta\.(\d+)$/
 
