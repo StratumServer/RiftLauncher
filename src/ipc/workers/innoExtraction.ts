@@ -28,7 +28,7 @@ import type { Lzma2DecoderFactory } from "../../domain/inno/lzma"
 import type { InnoInstallerFile } from "../../domain/inno/ports"
 import { assertNoSymlinkComponents } from "../validation"
 import { copyTree, validateTree } from "./extraction"
-import { isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
+import { awaitNativeSettle, isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
 
 /**
  * How an attempt ended.
@@ -226,5 +226,8 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
         if (outcome) outcome.cleanupWarning = outcome.cleanupWarning ?? { reason: "staging-cleanup-failed", code: errnoOf(error) }
       }
     }
+    // Last, on every path out: the worker reports and may be ended right after this returns, and
+    // the native streams cancelled above need NATIVE_SETTLE_MS before that is safe (#758).
+    await awaitNativeSettle()
   }
 }

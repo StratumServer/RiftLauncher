@@ -27,9 +27,7 @@ export type TaskResult = Record<string, unknown> | void
  * safe point and cleans up; one that ignores it just runs to its end, and the parent's grace
  * period decides how long it waits.
  */
-export type TaskSignal = AbortSignal
-
-export type TaskHandler = (payload: Record<string, unknown>, onProgress: ProgressReporter, signal: TaskSignal) => Promise<TaskResult> | TaskResult
+export type TaskHandler = (payload: Record<string, unknown>, onProgress: ProgressReporter, signal: AbortSignal) => Promise<TaskResult> | TaskResult
 
 /**
  * Turns a rejection into the message text the parent sees. Per worker on purpose:

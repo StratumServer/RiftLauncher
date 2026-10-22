@@ -8,7 +8,7 @@ type NativeDecompressStream = (input: ReadableStream<Uint8Array>, options: { dic
 const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
 
 /**
- * How long `close` keeps a cancelled native stream before its caller may go on and end the thread (#758).
+ * How long after the last cancelled native stream the thread must stay alive before it may be ended (#758).
  *
  * `reader.cancel()` resolves before the addon's own task has let go of the callbacks it holds into
  * this thread, and the addon exposes nothing that says when it has. Ending the worker in that gap
@@ -17,10 +17,24 @@ const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
  * a stream ended 3 ms in: 10 ms before the thread ended aborted 10 runs of 10, 20 ms aborted 1 in
  * 10, 30 ms none, and with eight busy processes competing for the CPU 20 ms aborted 6 in 10 while
  * 50 ms and 150 ms none. 100 ms is more than three times the idle figure and twice the loaded one.
- * Only a stream closed before its end pays it, and every caller is already on a failure or
- * cancellation path.
+ * `close` only records when it cancelled; whoever is about to let the thread end waits once, with
+ * `awaitNativeSettle`, so a run that cancels many streams (a block that decoded fine but was not
+ * read to its end) pays the remainder of this time once instead of once per stream.
  */
 export const NATIVE_SETTLE_MS = 100
+
+/** When the last cancelled stream in this thread may be considered settled, in `Date.now()` terms. */
+let settledAt = 0
+
+/**
+ * Resolves once `NATIVE_SETTLE_MS` has passed since the last stream this thread cancelled, at once
+ * when none was. Call it before the thread can end: after the extraction's own cleanup, on every
+ * path out of it.
+ */
+export async function awaitNativeSettle(): Promise<void> {
+  const remaining = settledAt - Date.now()
+  if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, remaining))
+}
 
 /** A native codec failure that is safe to retry with the TypeScript decoder. */
 export class NativeLzma2Error extends Error {
@@ -134,8 +148,11 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     this.ended = true
     const reader = this.reader
     if (!reader) return
+    // Recorded before the cancel resolves, never after: a concurrent awaitNativeSettle must not
+    // see the stream as settled while its cancel is still in flight.
+    settledAt = Date.now() + NATIVE_SETTLE_MS
     await reader.cancel().catch(() => undefined)
-    await new Promise<void>((resolve) => setTimeout(resolve, NATIVE_SETTLE_MS))
+    settledAt = Math.max(settledAt, Date.now() + NATIVE_SETTLE_MS)
   }
 
   /**

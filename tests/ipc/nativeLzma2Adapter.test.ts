@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { createNativeLzma2DecoderFactory, NATIVE_SETTLE_MS } from "@src/ipc/workers/nativeLzma2"
+import { awaitNativeSettle, createNativeLzma2DecoderFactory, NATIVE_SETTLE_MS } from "@src/ipc/workers/nativeLzma2"
 
 function inputOver(bytes: Uint8Array): { readExactly(length: number): Promise<Uint8Array> } {
   let at = 0
@@ -103,25 +103,71 @@ describe("native LZMA2 adapter", () => {
       return factory(0, () => {})
     }
 
-    it("keeps close pending for the settle time after cancelling a stream that has not ended", async () => {
+    // Fake clocks start at the real time, so a deadline an earlier test recorded could still be ahead.
+    function startFakeClock(): void {
       vi.useFakeTimers()
+      vi.setSystemTime(Date.now() + 60_000)
+    }
+
+    async function waitsFor(settle: Promise<void>, ms: number): Promise<void> {
+      let done = false
+      void settle.then(() => {
+        done = true
+      })
+      await vi.advanceTimersByTimeAsync(ms - 1)
+      expect(done).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await settle
+      expect(done).toBe(true)
+    }
+
+    it("returns from close without waiting, and leaves the settle to awaitNativeSettle", async () => {
+      startFakeClock()
       const decoder = openMidStream()
       await decoder.decodeChunk(inputOver(new Uint8Array(0)))
 
-      let closed = false
-      const closing = decoder.close?.().then(() => {
-        closed = true
-      })
-      await vi.advanceTimersByTimeAsync(NATIVE_SETTLE_MS - 1)
-      expect(closed).toBe(false)
+      await decoder.close?.()
+      expect(vi.getTimerCount()).toBe(0)
 
-      await vi.advanceTimersByTimeAsync(1)
-      await closing
-      expect(closed).toBe(true)
+      await waitsFor(awaitNativeSettle(), NATIVE_SETTLE_MS)
+    })
+
+    it("pays the settle once for many cancelled streams, not once per stream", async () => {
+      startFakeClock()
+      for (let index = 0; index < 5; index++) {
+        const decoder = openMidStream()
+        await decoder.decodeChunk(inputOver(new Uint8Array(0)))
+        await decoder.close?.()
+        await vi.advanceTimersByTimeAsync(10)
+      }
+
+      // The last cancel was 10 ms ago, so 90 ms remain, not 5 x 100.
+      await waitsFor(awaitNativeSettle(), NATIVE_SETTLE_MS - 10)
+    })
+
+    it("does not wait in awaitNativeSettle once the settle time has passed on its own", async () => {
+      startFakeClock()
+      const decoder = openMidStream()
+      await decoder.decodeChunk(inputOver(new Uint8Array(0)))
+      await decoder.close?.()
+      await vi.advanceTimersByTimeAsync(NATIVE_SETTLE_MS)
+
+      await awaitNativeSettle()
+
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it("does not wait in awaitNativeSettle when nothing was cancelled", async () => {
+      startFakeClock()
+      vi.setSystemTime(Date.now() + 60_000)
+
+      await awaitNativeSettle()
+
+      expect(vi.getTimerCount()).toBe(0)
     })
 
     it("does not wait when the stream already ended", async () => {
-      vi.useFakeTimers()
+      startFakeClock()
       const factory = createNativeLzma2DecoderFactory(
         () =>
           new ReadableStream<Uint8Array>({
@@ -139,7 +185,7 @@ describe("native LZMA2 adapter", () => {
     })
 
     it("does not wait when no native stream was ever opened", async () => {
-      vi.useFakeTimers()
+      startFakeClock()
 
       await openMidStream().close?.()
 
