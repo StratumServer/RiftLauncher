@@ -253,8 +253,12 @@ export class WorkerPool {
       const timer = setTimeout(() => {
         // Only reached when neither `cancelled` nor an exit arrived: the thread is ended with the
         // task still running, which is what the cancel exists to avoid.
-        if (pooled.state !== "dead") this.onCancelGraceExpired?.(pooled.scriptPath)
-        done()
+        const expired = pooled.state !== "dead"
+        try {
+          if (expired) this.onCancelGraceExpired?.(pooled.scriptPath)
+        } finally {
+          done()
+        }
       }, this.cancelGraceMs)
       pooled.worker.on("message", onMessage)
       pooled.worker.on("exit", done)

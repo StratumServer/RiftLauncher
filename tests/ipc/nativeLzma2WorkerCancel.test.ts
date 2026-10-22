@@ -14,11 +14,14 @@ const CYCLES = "30"
  *
  * @napi-rs/lzma 1.5.1 (napi 3.10.5) panics while dropping a callback reference when its thread ends
  * before the addon's own task has let go of it, and the process dies with SIGABRT (an access
- * violation on Windows). On Node 22 on
- * Linux a stream cancelled mid-decode and ended 10 ms later aborted in every run, 20 ms in about
- * one run in ten, and 30 ms never. Other Node lines did not reproduce it, so only the Node 22 legs
- * of CI can fail this test; the child process turns a crash into a failed assertion instead of a
- * dead runner. It pins NATIVE_SETTLE_MS: lowering it far enough fails here.
+ * violation on Windows). Other Node lines did not reproduce it, so only the Node 22 legs of CI can
+ * fail this test; the child process turns a crash into a failed assertion instead of a dead runner.
+ *
+ * The test guards the production shape: the input is errored at the cancel, as the abort signal does,
+ * and the fixture's pump (pulling every 16 ms) must be idle before the worker is terminated. It
+ * compares NATIVE_SETTLE_MS with that pull interval, so a settle of 10 ms or less fails here. The
+ * 100 ms figure itself comes from the older measurements with continuous input (see
+ * NATIVE_SETTLE_MS).
  */
 describe("native LZMA2 reader across a cancel and a worker teardown", () => {
   it(`survives 30 mid-stream cancels followed by the ${NATIVE_SETTLE_MS} ms settle and a worker terminate`, () => {

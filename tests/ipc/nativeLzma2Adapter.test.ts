@@ -187,6 +187,33 @@ describe("native LZMA2 adapter", () => {
       await expect(pumpReader.read()).rejects.toThrow(/closed/)
     })
 
+    it("close waits for a pull that is already reading the installer", async () => {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let nativeInput: ReadableStream<Uint8Array> | undefined
+      const factory = createNativeLzma2DecoderFactory((input) => {
+        nativeInput = input
+        return new ReadableStream<Uint8Array>({ pull: (): Promise<void> => new Promise<void>(() => undefined) })
+      })
+      const decoder = factory(0, () => {})
+      const frames = { readExactly: async (length: number): Promise<Uint8Array> => (await gate, length === 1 ? Uint8Array.of(0) : new Uint8Array(length)) }
+      void decoder.decodeChunk(frames)
+      await vi.waitFor(() => expect(nativeInput).toBeDefined())
+
+      let closed = false
+      const closing = decoder.close?.().then(() => {
+        closed = true
+      })
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      expect(closed).toBe(false)
+
+      release()
+      await closing
+      expect(closed).toBe(true)
+    })
+
     it("does not wait when the stream already ended", async () => {
       startFakeClock()
       const factory = createNativeLzma2DecoderFactory(

@@ -8,7 +8,7 @@ import type { AcquireOptions, WorkerLease } from "@src/ipc/workerPool"
 export type { WorkerDisposition, WorkerLease } from "@src/ipc/workerPool"
 
 const pool = new WorkerPool((scriptPath) => new Worker(scriptPath), {
-  onCancelGraceExpired: (): void => logMessage("warn", `[back] [ipc] [workerManager] A cancelled worker did not confirm in time and was terminated mid-task.`)
+  onCancelGraceExpired: (): void => logMessage("warn", `[back] [ipc/workerManager.ts] A cancelled worker did not confirm in time and was terminated mid-task.`)
 })
 
 /**

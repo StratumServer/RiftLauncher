@@ -378,6 +378,33 @@ describe("WorkerPool", () => {
       assert.deepEqual(expired.mock.calls, [["silent.js"]])
     })
 
+    it("terminates a cancelled worker even when the grace hook throws", () => {
+      const pool = new WorkerPool(() => fakeWorker(), {
+        cancelGraceMs: 1_000,
+        onCancelGraceExpired: (): void => {
+          throw new Error("hook failed")
+        }
+      })
+      const lease = pool.acquire("silent.js", 0, { cancellable: true })
+      lease.release("cancel")
+
+      assert.throws(() => vi.advanceTimersByTime(1_000), /hook failed/)
+
+      assert.equal(asFake(lease.worker).terminate.mock.calls.length, 1)
+    })
+
+    it("does not report a cancelled worker that died with an error before the grace ran out", () => {
+      const expired = vi.fn()
+      const pool = new WorkerPool(() => fakeWorker(), { cancelGraceMs: 1_000, onCancelGraceExpired: expired })
+      const lease = pool.acquire("crashing.js", 0, { cancellable: true })
+      lease.release("cancel")
+
+      asFake(lease.worker).emit("error", new Error("crashed"))
+      vi.advanceTimersByTime(1_000)
+
+      assert.equal(expired.mock.calls.length, 0)
+    })
+
     it("terminateAll returns null when no cancellable worker is busy", () => {
       const pool = new WorkerPool(() => fakeWorker())
       const idle = pool.acquire("inno.js", 1, { cancellable: true })
