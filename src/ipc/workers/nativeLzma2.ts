@@ -13,7 +13,7 @@ const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
  * `reader.cancel()` resolves before the addon's own task has let go of the callbacks it holds into
  * this thread, and the addon exposes nothing that says when it has. Ending the worker in that gap
  * makes napi 3.10.5 panic while it drops those references ("Call custom GC in FunctionRef::drop
- * failed InvalidArg") and the whole launcher aborts. Measured on Node 22 with @napi-rs/lzma 1.5.1,
+ * failed InvalidArg"), which aborts the launcher (SIGABRT; an access violation on Windows). Measured on Node 22 with @napi-rs/lzma 1.5.1,
  * a stream ended 3 ms in: 10 ms before the thread ended aborted 10 runs of 10, 20 ms aborted 1 in
  * 10, 30 ms none, and with eight busy processes competing for the CPU 20 ms aborted 6 in 10 while
  * 50 ms and 150 ms none. 100 ms is more than three times the idle figure and twice the loaded one.
@@ -104,6 +104,13 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
   private createReader(input: Lzma2Input): ReadableStreamDefaultReader<Uint8Array> {
     const source = new ReadableStream<Uint8Array>({
       pull: async (controller): Promise<void> => {
+        // `close` sets `ended`. When its cancel could not take the stream from a pull the addon has
+        // in flight, the addon's pump goes on pulling input until the input ends, so end it here:
+        // the settle then only has to cover the handoff between threads (#758).
+        if (this.ended) {
+          controller.error(new Error("the native LZMA2 stream was closed"))
+          return
+        }
         try {
           const control = (await input.readExactly(1))[0]!
           if (control === 0) {

@@ -42,6 +42,8 @@ export interface WorkerPoolOptions {
   idleTimeoutMs?: number
   maxTasksPerWorker?: number
   cancelGraceMs?: number
+  /** Called when a cancelled worker did not confirm within the grace period and is about to be terminated mid-task. */
+  onCancelGraceExpired?: (scriptPath: string) => void
 }
 
 export interface AcquireOptions {
@@ -85,6 +87,7 @@ export class WorkerPool {
   private readonly idleTimeoutMs: number
   private readonly maxTasksPerWorker: number
   private readonly cancelGraceMs: number
+  private readonly onCancelGraceExpired: ((scriptPath: string) => void) | undefined
   private nextToken = 0
   private shuttingDown = false
 
@@ -95,6 +98,7 @@ export class WorkerPool {
     this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_WORKER_TIMEOUT_MS
     this.maxTasksPerWorker = options.maxTasksPerWorker ?? MAX_TASKS_PER_WORKER
     this.cancelGraceMs = options.cancelGraceMs ?? CANCEL_GRACE_MS
+    this.onCancelGraceExpired = options.onCancelGraceExpired
   }
 
   /**
@@ -246,7 +250,12 @@ export class WorkerPool {
         const candidate = message as { type?: unknown; token?: unknown } | null
         if (candidate?.type === "cancelled" && candidate.token === token) done()
       }
-      const timer = setTimeout(done, this.cancelGraceMs)
+      const timer = setTimeout(() => {
+        // Only reached when neither `cancelled` nor an exit arrived: the thread is ended with the
+        // task still running, which is what the cancel exists to avoid.
+        if (pooled.state !== "dead") this.onCancelGraceExpired?.(pooled.scriptPath)
+        done()
+      }, this.cancelGraceMs)
       pooled.worker.on("message", onMessage)
       pooled.worker.on("exit", done)
       pooled.worker.postMessage({ type: "cancel", token })

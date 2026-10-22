@@ -349,6 +349,35 @@ describe("WorkerPool", () => {
       assert.equal(settled, true)
     })
 
+    it("a second terminateAll waits for the worker that is already cancelling instead of terminating it (#758)", async () => {
+      const pool = new WorkerPool(() => fakeWorker())
+      const lease = pool.acquire("inno.js", 0, { cancellable: true })
+
+      void pool.terminateAll()
+      const second = pool.terminateAll()
+
+      assert.notEqual(second, null)
+      assert.equal(asFake(lease.worker).terminate.mock.calls.length, 0)
+
+      asFake(lease.worker).emit("message", { type: "cancelled", token: lease.token })
+      await second
+      assert.equal(asFake(lease.worker).terminate.mock.calls.length, 1)
+    })
+
+    it("reports a cancelled worker that never confirmed, and not one that did", () => {
+      const expired = vi.fn()
+      const pool = new WorkerPool(() => fakeWorker(), { cancelGraceMs: 1_000, onCancelGraceExpired: expired })
+      const silent = pool.acquire("silent.js", 0, { cancellable: true })
+      const polite = pool.acquire("polite.js", 0, { cancellable: true })
+      silent.release("cancel")
+      polite.release("cancel")
+
+      asFake(polite.worker).emit("message", { type: "cancelled", token: polite.token })
+      vi.advanceTimersByTime(1_000)
+
+      assert.deepEqual(expired.mock.calls, [["silent.js"]])
+    })
+
     it("terminateAll returns null when no cancellable worker is busy", () => {
       const pool = new WorkerPool(() => fakeWorker())
       const idle = pool.acquire("inno.js", 1, { cancellable: true })

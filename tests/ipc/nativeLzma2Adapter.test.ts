@@ -166,6 +166,27 @@ describe("native LZMA2 adapter", () => {
       expect(vi.getTimerCount()).toBe(0)
     })
 
+    it("stops pulling input once closed, even when the addon's pump holds the stream", async () => {
+      let nativeInput: ReadableStream<Uint8Array> | undefined
+      const reads: number[] = []
+      const factory = createNativeLzma2DecoderFactory((input) => {
+        nativeInput = input
+        // A pump that is mid-pull cannot be cancelled: the output stream stays open here.
+        return new ReadableStream<Uint8Array>({ pull: (): Promise<void> => new Promise<void>(() => undefined) })
+      })
+      const decoder = factory(0, () => {})
+      const frames = { readExactly: async (length: number): Promise<Uint8Array> => (reads.push(length), length === 1 ? Uint8Array.of(1) : new Uint8Array(length)) }
+      void decoder.decodeChunk(frames)
+      await vi.waitFor(() => expect(nativeInput).toBeDefined())
+
+      const pumpReader = nativeInput!.getReader()
+      expect((await pumpReader.read()).done).toBe(false)
+
+      await decoder.close?.()
+
+      await expect(pumpReader.read()).rejects.toThrow(/closed/)
+    })
+
     it("does not wait when the stream already ended", async () => {
       startFakeClock()
       const factory = createNativeLzma2DecoderFactory(

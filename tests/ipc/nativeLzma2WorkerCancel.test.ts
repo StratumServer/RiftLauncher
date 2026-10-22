@@ -13,7 +13,8 @@ const CYCLES = "30"
  * Ending a worker right after it cancelled the native LZMA2 reader must not kill the process (#758).
  *
  * @napi-rs/lzma 1.5.1 (napi 3.10.5) panics while dropping a callback reference when its thread ends
- * before the addon's own task has let go of it, and the process dies with SIGABRT. On Node 22 on
+ * before the addon's own task has let go of it, and the process dies with SIGABRT (an access
+ * violation on Windows). On Node 22 on
  * Linux a stream cancelled mid-decode and ended 10 ms later aborted in every run, 20 ms in about
  * one run in ten, and 30 ms never. Other Node lines did not reproduce it, so only the Node 22 legs
  * of CI can fail this test; the child process turns a crash into a failed assertion instead of a

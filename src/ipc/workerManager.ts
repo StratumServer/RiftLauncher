@@ -2,11 +2,14 @@ import { app } from "electron"
 import { Worker } from "node:worker_threads"
 
 import { WorkerPool } from "@src/ipc/workerPool"
+import { logMessage } from "@src/utils/logManager"
 import type { AcquireOptions, WorkerLease } from "@src/ipc/workerPool"
 
 export type { WorkerDisposition, WorkerLease } from "@src/ipc/workerPool"
 
-const pool = new WorkerPool((scriptPath) => new Worker(scriptPath))
+const pool = new WorkerPool((scriptPath) => new Worker(scriptPath), {
+  onCancelGraceExpired: (): void => logMessage("warn", `[back] [ipc] [workerManager] A cancelled worker did not confirm in time and was terminated mid-task.`)
+})
 
 /**
  * Takes a worker for one task. Release the lease once the task settles, saying whether the

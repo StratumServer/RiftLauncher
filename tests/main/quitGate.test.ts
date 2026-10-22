@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, it, vi } from "vitest"
 
 import { createBeforeQuitHandler } from "@src/main/quitGate"
@@ -80,5 +82,10 @@ describe("before-quit gate", () => {
     assert.equal(t.terminateWorkers.mock.calls.length, 2)
     assert.equal(t.flushConfigWrites.mock.calls.length, 1)
     assert.equal(t.preventDefault.mock.calls.length, 1)
+  })
+
+  it("is wired to the pool's own terminateActiveWorkers, whose promise is what the quit waits on (#758)", () => {
+    const source = readFileSync(resolve(__dirname, "..", "..", "src", "main", "index.ts"), "utf8")
+    assert.match(source, /createBeforeQuitHandler\(\{\s*terminateWorkers: terminateActiveWorkers\b/)
   })
 })
