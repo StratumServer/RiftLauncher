@@ -14,6 +14,7 @@ interface FakeOptions {
 }
 
 let attempts = 0
+const { awaitNativeSettle } = vi.hoisted(() => ({ awaitNativeSettle: vi.fn(async (): Promise<void> => undefined) }))
 
 vi.mock("@src/domain/inno/extract", () => ({
   extractInnoPayload: async (ports: FakePorts, options: FakeOptions): Promise<{ version: string; compression: "lzma2"; filesWritten: number; bytesWritten: number }> => {
@@ -29,6 +30,7 @@ vi.mock("@src/domain/inno/extract", () => ({
 }))
 
 vi.mock("@src/ipc/workers/nativeLzma2", () => ({
+  awaitNativeSettle,
   isNativeLzma2Error: (error: unknown): boolean => error instanceof Error && error.message === "native failure",
   loadNativeLzma2DecoderFactory: async (): Promise<() => Record<string, never>> => () => ({})
 }))
@@ -39,6 +41,7 @@ let workspace: string
 
 beforeEach(() => {
   attempts = 0
+  awaitNativeSettle.mockClear()
   workspace = mkdtempSync(join(tmpdir(), "rift-inno-native-cleanup-"))
 })
 
@@ -58,5 +61,20 @@ describe("native LZMA2 fallback cleanup", () => {
     expect(attempts).toBe(2)
     expect(readFileSync(join(target, "final.txt"))).toEqual(Buffer.from([2]))
     expect(existsSync(join(target, "partial.txt"))).toBe(false)
+  })
+
+  it("waits for the native streams to settle once, after the extraction, so the worker may end (#758)", async () => {
+    const installer = join(workspace, "installer.bin")
+    writeFileSync(installer, "fixture")
+
+    await runInnoExtraction({ filePath: installer, outputPath: join(workspace, "target"), deleteInstaller: false })
+
+    expect(awaitNativeSettle).toHaveBeenCalledTimes(1)
+  })
+
+  it("also waits when the extraction cannot even start", async () => {
+    await expect(runInnoExtraction({ filePath: join(workspace, "missing.bin"), outputPath: join(workspace, "target"), deleteInstaller: false })).rejects.toThrow()
+
+    expect(awaitNativeSettle).toHaveBeenCalledTimes(1)
   })
 })

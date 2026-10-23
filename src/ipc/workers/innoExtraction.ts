@@ -28,7 +28,7 @@ import type { Lzma2DecoderFactory } from "../../domain/inno/lzma"
 import type { InnoInstallerFile } from "../../domain/inno/ports"
 import { assertNoSymlinkComponents } from "../validation"
 import { copyTree, validateTree } from "./extraction"
-import { isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
+import { awaitNativeSettle, isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
 
 /**
  * How an attempt ended.
@@ -49,6 +49,11 @@ export interface InnoExtractionOptions {
   deleteInstaller: boolean
   /** Called with 0 to 100 as the work advances. */
   onProgress?: (progress: number) => void
+  /**
+   * Aborted when the parent is about to end the thread. The next read of the installer then throws,
+   * which unwinds through the extraction's own cleanup, including the native stream's (#758).
+   */
+  signal?: AbortSignal
 }
 
 /** Why a post-copy cleanup step was skipped, plus the errno it failed with. */
@@ -79,10 +84,11 @@ function errnoOf(error: unknown): string {
 }
 
 /** Reads the installer through a file handle, one range at a time. */
-function installerFile(handle: fse.promises.FileHandle, size: number): InnoInstallerFile {
+function installerFile(handle: fse.promises.FileHandle, size: number, signal?: AbortSignal): InnoInstallerFile {
   return {
     size,
     read: async (offset, length): Promise<Uint8Array> => {
+      signal?.throwIfAborted()
       const buffer = Buffer.allocUnsafe(length)
       const { bytesRead } = await handle.read(buffer, 0, length, offset)
       return buffer.subarray(0, bytesRead)
@@ -128,7 +134,7 @@ function payloadSink(root: string): { writeFile(relativePath: string, contents: 
  * fails the same checks an archive has to pass.
  */
 export async function runInnoExtraction(options: InnoExtractionOptions): Promise<InnoExtractionOutcome> {
-  const { filePath, outputPath, deleteInstaller, onProgress } = options
+  const { filePath, outputPath, deleteInstaller, onProgress, signal } = options
   let temporaryRoot: string | undefined
   // Set once copyTree lands the game. From that point on, nothing below is allowed to turn
   // this outcome into a thrown error: a scanner holding a handle on the installer or the
@@ -151,7 +157,7 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
     let bytesWritten: number
     try {
       const stats = await handle.stat()
-      const installer = installerFile(handle, stats.size)
+      const installer = installerFile(handle, stats.size, signal)
       const digest = { hash: (bytes: Uint8Array): Uint8Array => createHash("sha256").update(bytes).digest() }
       const extract = (lzma2DecoderFactory?: Lzma2DecoderFactory): Promise<InnoExtractionResult> =>
         extractInnoPayload(
@@ -220,5 +226,8 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
         if (outcome) outcome.cleanupWarning = outcome.cleanupWarning ?? { reason: "staging-cleanup-failed", code: errnoOf(error) }
       }
     }
+    // Last, on every path out: the worker reports and may be ended right after this returns, and
+    // the native streams cancelled above need NATIVE_SETTLE_MS before that is safe (#758).
+    await awaitNativeSettle()
   }
 }

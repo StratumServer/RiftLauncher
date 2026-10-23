@@ -1213,6 +1213,33 @@ describe("before-quit: the limiters stop admitting work", () => {
     assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeQueued)
   })
 
+  it("leaves the lanes open when a close guard is held, because the window vetoes that quit (#758)", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    const worker = new EventEmitter()
+    vi.mocked(acquireWorker).mockImplementationOnce(() => ({
+      worker: worker as unknown as import("worker_threads").Worker,
+      token: nextLeaseToken++,
+      dispatch: vi.fn(),
+      release: vi.fn()
+    }))
+
+    // Imported here, after the beforeEach's vi.resetModules(), so it is the instance the handlers see.
+    const { setShouldPreventClose } = await import("@src/utils/shouldPreventClose")
+    setShouldPreventClose("add", "test-guard", "a task holds the close")
+    try {
+      emitAppEvent("before-quit")
+    } finally {
+      setShouldPreventClose("remove", "test-guard", "released")
+    }
+
+    // The vetoed quit left the launcher running: a later archive call must still be admitted.
+    const result = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH)(event, "task-after-veto", managedFolder, versionsFolder, "archive.zip", 4)
+    await vi.waitFor(() => assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1))
+    worker.emit("message", { type: "finished" })
+    assert.equal(await result, true)
+  })
+
   it("COMPRESS_ON_PATH rejects a call arriving after before-quit, without ever calling acquireWorker", async () => {
     const event = await createTrustedEvent()
     const { acquireWorker } = await import("@src/ipc/workerManager")

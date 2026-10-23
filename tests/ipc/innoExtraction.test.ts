@@ -45,6 +45,21 @@ afterEach(() => {
 })
 
 describe("runInnoExtraction", () => {
+  // The parent aborts the signal before it ends the thread (#758). The next read of the installer
+  // then throws, so the extraction unwinds through its own cleanup instead of being cut off inside it.
+  it("stops at the next read of the installer once its signal is aborted, and leaves nothing in the target", async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    await assert.rejects(
+      runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: true, signal: controller.signal }),
+      (error: Error) => error.name === "AbortError"
+    )
+
+    assert.deepEqual(readdirSync(workspacePath("target")), [])
+    assert.equal(existsSync(workspacePath("valid.bin")), true)
+  })
+
   it("lays the payload down in the target folder", async () => {
     const outcome = await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
 

@@ -7,6 +7,37 @@ type NativeDecompressStream = (input: ReadableStream<Uint8Array>, options: { dic
 /** Keep each callback within the domain stream's fixed staging buffer. */
 const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
 
+/**
+ * How long after the last cancelled native stream the thread must stay alive before it may be ended (#758).
+ *
+ * `reader.cancel()` resolves before the addon's own task has let go of the callbacks it holds into
+ * this thread, and the addon exposes nothing that says when it has. Ending the worker in that gap
+ * makes napi 3.10.5 panic while it drops those references ("Call custom GC in FunctionRef::drop
+ * failed InvalidArg"), which aborts the launcher (SIGABRT; an access violation on Windows). Measured on Node 22 with @napi-rs/lzma 1.5.1,
+ * a stream ended 3 ms in: 10 ms before the thread ended aborted 10 runs of 10, 20 ms aborted 1 in
+ * 10, 30 ms none, and with eight busy processes competing for the CPU 20 ms aborted 6 in 10 while
+ * 50 ms and 150 ms none. 100 ms is more than three times the idle figure and twice the loaded one.
+ * Those runs fed the stream continuously; once the input is errored at the cancel, as `pullInput` does,
+ * the teardown no longer crashed on Linux, so the figures above are for the worst case.
+ * `close` only records when it cancelled; whoever is about to let the thread end waits once, with
+ * `awaitNativeSettle`, so a run that cancels many streams (a block that decoded fine but was not
+ * read to its end) pays the remainder of this time once instead of once per stream.
+ */
+export const NATIVE_SETTLE_MS = 100
+
+/** When the last cancelled stream in this thread may be considered settled, in `Date.now()` terms. */
+let settledAt = 0
+
+/**
+ * Resolves once `NATIVE_SETTLE_MS` has passed since the last stream this thread cancelled, at once
+ * when none was. Call it before the thread can end: after the extraction's own cleanup, on every
+ * path out of it.
+ */
+export async function awaitNativeSettle(): Promise<void> {
+  const remaining = settledAt - Date.now()
+  if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, remaining))
+}
+
 /** A native codec failure that is safe to retry with the TypeScript decoder. */
 export class NativeLzma2Error extends Error {
   constructor(message: string) {
@@ -57,6 +88,7 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
   private ended = false
   private sourceError: unknown
   private sourceFailed = false
+  private pulling: Promise<void> | undefined
 
   constructor(
     decompressStream: NativeDecompressStream,
@@ -74,28 +106,39 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
 
   private createReader(input: Lzma2Input): ReadableStreamDefaultReader<Uint8Array> {
     const source = new ReadableStream<Uint8Array>({
-      pull: async (controller): Promise<void> => {
-        try {
-          const control = (await input.readExactly(1))[0]!
-          if (control === 0) {
-            controller.enqueue(Uint8Array.of(0))
-            controller.close()
-            return
-          }
-
-          controller.enqueue(await readFrame(input, control))
-        } catch (error) {
-          this.sourceError = error
-          this.sourceFailed = true
-          controller.error(error)
-        }
-      }
+      pull: (controller): Promise<void> => (this.pulling = this.pullInput(input, controller))
     })
 
     try {
       return this.decompressStream(source, { dictSize: this.dictionarySize }).getReader()
     } catch {
       throw new NativeLzma2Error("the native LZMA2 decoder could not be created")
+    }
+  }
+
+  /**
+   * `close` sets `ended`. When its cancel could not take the stream from a pull the addon has in
+   * flight, the addon's pump goes on pulling input until the input ends, so end it here: the settle
+   * then only has to cover the handoff between threads (#758).
+   */
+  private async pullInput(input: Lzma2Input, controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
+    if (this.ended) {
+      controller.error(new Error("the native LZMA2 stream was closed"))
+      return
+    }
+    try {
+      const control = (await input.readExactly(1))[0]!
+      if (control === 0) {
+        controller.enqueue(Uint8Array.of(0))
+        controller.close()
+        return
+      }
+
+      controller.enqueue(await readFrame(input, control))
+    } catch (error) {
+      this.sourceError = error
+      this.sourceFailed = true
+      controller.error(error)
     }
   }
 
@@ -118,7 +161,15 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     if (this.ended) return
     this.ended = true
     const reader = this.reader
-    if (reader) await reader.cancel().catch(() => undefined)
+    if (!reader) return
+    // Recorded before the cancel resolves, never after: a concurrent awaitNativeSettle must not
+    // see the stream as settled while its cancel is still in flight.
+    settledAt = Date.now() + NATIVE_SETTLE_MS
+    await reader.cancel().catch(() => undefined)
+    // A pull already reading the installer would move the cursor the next block seeks, so nothing
+    // may read it once `close` has resolved.
+    await this.pulling?.catch(() => undefined)
+    settledAt = Math.max(settledAt, Date.now() + NATIVE_SETTLE_MS)
   }
 
   /**

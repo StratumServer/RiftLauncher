@@ -14,7 +14,7 @@ import fse from "fs-extra"
 import { readLinuxPackageType } from "@src/main/linuxPackageType"
 
 import { ensureConfig, flushConfigWrites, getConfig, noteUserDataImportFailed, saveConfig } from "@src/config/configManager"
-import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
+import { getShouldPreventClose, isQuitGoingToBeVetoed, setCloseVetoWindowProbe } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
@@ -23,6 +23,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
+import { createBeforeQuitHandler } from "@src/main/quitGate"
 import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
 import { installNewestReleaseProvider } from "@src/main/newestReleaseProvider"
 import { basicPasswordStoreSwitch } from "@domain/account/sessionStorage"
@@ -455,22 +456,19 @@ app.on("window-all-closed", () => {
   }
 })
 
-let isWaitingForConfigFlush = false
+// The window's close handler is what vetoes a quit, so a held close guard only holds the quit while
+// there is a window to veto it. The handlers' own before-quit listeners ask the same question.
+setCloseVetoWindowProbe(() => Boolean(mainWindow) && !mainWindow.isDestroyed())
 
-app.on("before-quit", (event) => {
-  terminateActiveWorkers()
-
-  if (isWaitingForConfigFlush) return
-  const pendingConfigWrite = flushConfigWrites()
-  if (pendingConfigWrite === null) return
-
-  event.preventDefault()
-  isWaitingForConfigFlush = true
-  void pendingConfigWrite.then(
-    () => app.quit(),
-    () => app.quit()
-  )
-})
+app.on(
+  "before-quit",
+  createBeforeQuitHandler({
+    terminateWorkers: terminateActiveWorkers,
+    flushConfigWrites,
+    closeGuardHoldsQuit: isQuitGoingToBeVetoed,
+    quit: () => app.quit()
+  })
+)
 
 async function saveCurrentWindowState(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
