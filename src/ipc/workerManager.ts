@@ -3,6 +3,7 @@ import { Worker } from "node:worker_threads"
 
 import { WorkerPool } from "@src/ipc/workerPool"
 import { logMessage } from "@src/utils/logManager"
+import { isQuitGoingToBeVetoed } from "@src/utils/shouldPreventClose"
 import type { AcquireOptions, WorkerLease } from "@src/ipc/workerPool"
 
 export type { WorkerDisposition, WorkerLease } from "@src/ipc/workerPool"
@@ -34,6 +35,9 @@ export function terminateActiveWorkers(): Promise<void> | null {
   return pool.terminateAll()
 }
 
+// A quit a close guard is going to veto (#702) must leave the workers alone: terminateAll ends
+// the running task and shuts the pool for the rest of the session (#758).
 app.on("before-quit", () => {
+  if (isQuitGoingToBeVetoed()) return
   void terminateActiveWorkers()
 })
