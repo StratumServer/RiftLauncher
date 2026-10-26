@@ -180,9 +180,10 @@ describe("before-quit gate", () => {
   it("uses the one shared veto predicate, so the lanes and this gate always agree (#758)", () => {
     const source = readFileSync(resolve(__dirname, "..", "..", "src", "main", "index.ts"), "utf8")
     assert.match(source, /closeGuardHoldsQuit: isQuitGoingToBeVetoed\b/)
-    for (const handler of ["pathsHandlers", "netHandlers"]) {
-      const handlerSource = readFileSync(resolve(__dirname, "..", "..", "src", "ipc", "handlers", `${handler}.ts`), "utf8")
-      assert.match(handlerSource, /if \(isQuitGoingToBeVetoed\(\)\) return/, handler)
+    assert.match(source, /setCloseVetoWindowProbe\(\(\) => Boolean\(mainWindow\) && !mainWindow\.isDestroyed\(\)\)/)
+    for (const listener of ["handlers/pathsHandlers", "handlers/netHandlers", "workerManager"]) {
+      const listenerSource = readFileSync(resolve(__dirname, "..", "..", "src", "ipc", `${listener}.ts`), "utf8")
+      assert.match(listenerSource, /if \(isQuitGoingToBeVetoed\(\)\) return/, listener)
     }
   })
 })

@@ -31,7 +31,7 @@ en-US is the source and carries 957 keys.
 | pl-PL  |  882 |     112 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pl/?q=state:needs-editing)      |
 | pt-BR  |  883 |     111 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_BR/?q=state:needs-editing)   |
 | pt-PT  |  882 |     112 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_PT/?q=state:needs-editing)   |
-| ru-RU  |  972 |      24 |     2 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/ru/?q=state:needs-editing)      |
+| ru-RU  |  996 |       0 |     2 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/ru/?q=state:needs-editing)      |
 | uk-UA  |  882 |     112 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/uk/?q=state:needs-editing)      |
 | zh-CN  |  828 |      92 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/zh_Hans/?q=state:needs-editing) |
 
