@@ -135,6 +135,9 @@ export async function archiveState(fileSystem: Pick<FileSystem, "exists">, backu
  * A record whose folder cannot be reached, a drive that is unplugged or a Backups
  * folder that moved, holds no slot either, but it stays as it is: it is never
  * deleted and never reported, so it is still listed when the drive comes back.
+ * When `archiveStates` is provided, those precomputed states are used so that a
+ * folder recreated during backup creation is not mistaken for a folder that was
+ * already present (#748).
  *
  * Archives are held newest first, so the walk runs backwards from the end.
  * Whatever came off is reported either way, since a caller that gives up
@@ -143,11 +146,19 @@ export async function archiveState(fileSystem: Pick<FileSystem, "exists">, backu
 export async function pruneOldestBackups(
   fileSystem: Pick<FileSystem, "exists" | "remove">,
   installation: Pick<InstallationSnapshot, "backups" | "backupsLimit">,
-  events: MakeInstallationBackupEvents = {}
+  events: MakeInstallationBackupEvents = {},
+  archiveStates?: ArchiveState[] | ReadonlyMap<string, ArchiveState>
 ): Promise<PruneOutcome> {
   const deletedBackupIds: string[] = []
 
-  const states = await Promise.all(installation.backups.map((backup) => archiveState(fileSystem, backup)))
+  const states = await Promise.all(
+    installation.backups.map((backup, index) => {
+      if (Array.isArray(archiveStates)) {
+        return archiveStates[index] ?? archiveState(fileSystem, backup)
+      }
+      return archiveStates?.get(backup.id) ?? archiveState(fileSystem, backup)
+    })
+  )
   const archives = installation.backups.filter((_, index) => states[index] === "on-disk")
   for (const backup of installation.backups.filter((_, index) => states[index] === "gone")) {
     deletedBackupIds.push(backup.id)
@@ -253,6 +264,11 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     if (!name) return refuse("compress-failed", [], "No free archive name.")
     const { fileName, archivePath } = name
 
+    // States are captured before the compression recreates an absent output
+    // folder: otherwise an archive on a missing drive or moved folder appears
+    // to have been deleted from the now-existing folder, and gets pruned (#748).
+    const initialStates = await Promise.all(installation.backups.map((backup) => archiveState(ports.fileSystem, backup)))
+
     let outcome: CompressOutcome = { ok: false, error: "The archiver never reported an outcome." }
     await ports.archiver.compress({ sourcePath: installation.path, outputFolder, fileName, compressionLevel: installation.compressionLevel }, (reported) => {
       outcome = reported
@@ -264,7 +280,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     events.onBackupCreated?.(backup)
 
     // The archive exists and is recorded, so nothing below may turn this into a failure.
-    const pruned = await pruneOldestBackups(ports.fileSystem, installation, events).catch(() => undefined)
+    const pruned = await pruneOldestBackups(ports.fileSystem, installation, events, initialStates).catch(() => undefined)
     if (!pruned?.ok) events.onPruneIncomplete?.()
     return { ok: true, backup, deletedBackupIds: pruned?.deletedBackupIds ?? [] }
   } finally {

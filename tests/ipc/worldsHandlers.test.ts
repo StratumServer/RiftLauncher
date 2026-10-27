@@ -748,6 +748,7 @@ describe("worlds IPC handlers", () => {
     const sourcePath = join(installationsRoot, "install-a")
     mkdirSync(join(sourcePath, "Saves"), { recursive: true })
     writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
 
     const deadId = "40000000-0000-4000-8000-000000000004"
     const existingBackups: WorldBackupType[] = [{ id: deadId, date: 100, path: join(backupsFolder, "Worlds", "missing.tar.gz"), worldName: "World.vcdbs" }]
@@ -767,6 +768,32 @@ describe("worlds IPC handlers", () => {
     const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
     expect(savedBackups).toHaveLength(1)
     expect(savedBackups[0]?.id).toBe(result.backup.id)
+  })
+
+  it("preserves older world backups whose Worlds folder went missing when the folder is recreated during backup (#748)", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+
+    // The Worlds folder does not exist yet (e.g. unmounted drive or missing folder)
+    const missingFolderId = "40000000-0000-4000-8000-000000000005"
+    const existingBackups: WorldBackupType[] = [{ id: missingFolderId, date: 100, path: join(backupsFolder, "Worlds", "old-world.tar.gz"), worldName: "World.vcdbs" }]
+
+    const inst = installation("install-a", sourcePath, "1.22.7", existingBackups)
+    inst.backupsLimit = 3
+    writeConfig([inst])
+
+    const event = await createTrustedEvent()
+    const result = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+
+    expect(result.deletedBackupIds).toEqual([])
+
+    const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
+    expect(savedBackups).toHaveLength(2)
+    expect(savedBackups.map((b) => b.id)).toContain(missingFolderId)
   })
 
   it("refuses to delete a world backup when the installation is playing", async () => {

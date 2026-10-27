@@ -13,7 +13,7 @@ import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
-import { pruneOldestBackups } from "@domain/installations/backup"
+import { archiveState, pruneOldestBackups } from "@domain/installations/backup"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/worldsHandlers.ts]"
@@ -227,6 +227,13 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
     const archivePath = join(outputFolder, `${backupId}.tar.gz`)
     return await withCloseGuard("Backing up a world.", async () => {
       try {
+        const existingBackups = (installation.worldBackups ?? []).filter((candidate) => candidate.worldName === world.name)
+        const initialStates = new Map(
+          await Promise.all(
+            existingBackups.map(async (b) => [b.id, await archiveState({ exists: (path: string): Promise<boolean> => fse.pathExists(path) }, { id: b.id, path: b.path, date: b.date })] as const)
+          )
+        )
+
         // Loaded here rather than at module scope: this chunk is tens of milliseconds of the
         // main process's startup, and it is only ever needed once a player asks for a backup or
         // a restore. Nothing else in this file touches it, so the require is off the boot path.
@@ -253,10 +260,15 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
               return removeWorldBackupArchive(path, expectedId)
             }
           }
-          const pruneOutcome = await pruneOldestBackups(fileSystem, {
-            backups: olderBackups.map((b) => ({ id: b.id, date: b.date, path: b.path })),
-            backupsLimit: installation.backupsLimit
-          })
+          const pruneOutcome = await pruneOldestBackups(
+            fileSystem,
+            {
+              backups: olderBackups.map((b) => ({ id: b.id, date: b.date, path: b.path })),
+              backupsLimit: installation.backupsLimit
+            },
+            {},
+            initialStates
+          )
           if (pruneOutcome.deletedBackupIds.length > 0) {
             const deletedSet = new Set(pruneOutcome.deletedBackupIds)
             await removeWorldBackupRecords(installation.id, deletedSet)
