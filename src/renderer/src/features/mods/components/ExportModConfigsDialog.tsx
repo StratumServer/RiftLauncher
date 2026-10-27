@@ -27,10 +27,11 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * player has already said they want to share by ticking the box that opened this dialog. The warning
  * is what makes that safe, and every row is a way to say no to one of them.
  *
- * Files that a pack cannot carry (a name Windows refuses or that carries hidden Unicode characters,
- * or a name that collides with another config in letter case) and symbolic links display why under
- * their name. Unsupported and linked rows are disabled, while colliding rows start unticked: unticking
- * a colliding config leaves it out of the export instead of failing.
+ * Files that a pack cannot carry (a name Windows refuses, an unreadable non-UTF-8 file name, or one
+ * that carries hidden Unicode characters, or a name that collides with another config in letter case)
+ * and symbolic links display why under their name. Unsupported, unreadable, and linked rows are
+ * disabled, while colliding rows start unticked: unticking a colliding config leaves it out of the
+ * export instead of failing.
  */
 function ExportModConfigsDialog({
   open,
@@ -160,6 +161,15 @@ function ExportModConfigsDialog({
                   <label htmlFor={`export-mod-config-${name}`} className="flex-1 overflow-hidden">
                     <span className="block truncate font-bold">{name}</span>
                     <span className="block truncate text-sm text-zinc-300">{t("features.mods.exportModConfigsLinked")}</span>
+                  </label>
+                </li>
+              ))}
+              {listing.unreadable?.map((name) => (
+                <li key={`unreadable-${name}`} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
+                  <Input id={`export-mod-config-${name}`} type="checkbox" checked={false} disabled />
+                  <label htmlFor={`export-mod-config-${name}`} className="flex-1 overflow-hidden">
+                    <span className="block truncate font-bold">{name}</span>
+                    <span className="block truncate text-sm text-zinc-300">{t("features.mods.exportModConfigsUnreadableName")}</span>
                   </label>
                 </li>
               ))}

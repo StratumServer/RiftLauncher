@@ -188,28 +188,26 @@ function digestOf(bytes: Buffer): string {
 export type ExportModpackConfigFailure = ExportModpackRefusal
 
 /**
- * Walks an installation's `ModConfig` folder.
+ * Walks an installation's `ModConfig` folder, finding the JSON files, the symbolic links and any
+ * entries whose names are not valid UTF-8.
  *
- * The folder is reached through `assertManagedPath`, so it is inside a managed installation and has
- * no symbolic link in any of its existing ancestors, and every file is read with `lstat` so a link
- * *inside* the folder is set aside rather than followed out of it. A `.json` extension is what makes
- * a file a candidate at all, compared without case because Windows does not.
- *
- * A link is not a file, but it is not nothing either: the apply refuses a config at its name and
- * below it, so the walk reports it by name for the import dialog to say so. That is all it does with
- * one. It is neither opened nor followed, which is why the folder a link points at is never listed.
+ * Symlinks are named and nothing more: following one would let a folder link hand the launcher
+ * files from anywhere on the disk, and descending into one would list a folder from anywhere on it.
+ * Entries whose names are not valid UTF-8 are also reported by name and skipped: reading with
+ * `encoding: "buffer"` keeps the raw filesystem bytes so an invalid name does not throw ENOENT on
+ * `lstat` and take down the whole folder's listing.
  *
  * @param installationPath An installation folder, already asserted as a configured one.
  * @param options.only The keys to look at, or undefined for all of them. Filtered before `lstat`,
  *   so a pack the player narrowed down does not stat or read the files they left out of it. It
- *   narrows the files and never the links, which are a fact about the folder and not a choice of
- *   the player's.
- * @returns The files and the links, each relative to the folder with `/` between directories.
+ *   narrows the files and never the links or unreadable entries, which are a fact about the folder
+ *   and not a choice of the player's.
+ * @returns The files, links and unreadable names, each relative to the folder with `/` between directories.
  * @throws When the folder cannot be listed.
  */
-async function walkModConfigs(installationPath: string, options: { ceiling?: number; only?: ReadonlySet<string> } = {}): Promise<{ files: ListedConfig[]; linked: string[] }> {
+async function walkModConfigs(installationPath: string, options: { ceiling?: number; only?: ReadonlySet<string> } = {}): Promise<{ files: ListedConfig[]; linked: string[]; unreadable: string[] }> {
   const root = join(installationPath, MOD_CONFIG_FOLDER_NAME)
-  if (!(await fse.pathExists(root))) return { files: [], linked: [] }
+  if (!(await fse.pathExists(root))) return { files: [], linked: [], unreadable: [] }
 
   const safeRoot = await assertManagedPath(root, "mod config folder")
   const rootStats = await fse.lstat(safeRoot)
@@ -219,15 +217,29 @@ async function walkModConfigs(installationPath: string, options: { ceiling?: num
 
   const found: ListedConfig[] = []
   const linked: string[] = []
+  const unreadable: string[] = []
   const maxFound = options.ceiling ?? (options.only !== undefined ? MAX_MODPACK_ENTRIES : MAX_MOD_CONFIG_LISTING_ENTRIES)
   let visitedEntries = 0
   // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
   const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
 
   const visit = async (folder: string): Promise<void> => {
-    const entries = await fse.readdir(folder, { withFileTypes: true })
+    const entries = await fse.readdir(folder, { withFileTypes: true, encoding: "buffer" })
     for (const entry of entries) {
-      const entryPath = join(folder, entry.name)
+      const rawName: string | Buffer = entry.name as unknown as string | Buffer
+      const isInvalidUtf8 = Buffer.isBuffer(rawName) ? !isUtf8(rawName) : false
+      if (isInvalidUtf8) {
+        const decodedName = Buffer.isBuffer(rawName) ? rawName.toString("utf8") : rawName
+        if (entry.isDirectory() || entry.isSymbolicLink() || (entry.isFile() && decodedName.toLowerCase().endsWith(".json"))) {
+          if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
+          visitedEntries += 1
+          unreadable.push(keyOf(join(folder, decodedName)))
+        }
+        continue
+      }
+
+      const entryName = Buffer.isBuffer(rawName) ? rawName.toString("utf8") : rawName
+      const entryPath = join(folder, entryName)
       if (entry.isDirectory()) {
         await visit(entryPath)
         continue
@@ -243,7 +255,7 @@ async function walkModConfigs(installationPath: string, options: { ceiling?: num
         linked.push(keyOf(entryPath))
         continue
       }
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
+      if (!entry.isFile() || !entryName.toLowerCase().endsWith(".json")) continue
 
       if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
       visitedEntries += 1
@@ -267,7 +279,7 @@ async function walkModConfigs(installationPath: string, options: { ceiling?: num
   }
 
   await visit(safeRoot)
-  return { files: found, linked }
+  return { files: found, linked, unreadable }
 }
 
 /**
@@ -411,8 +423,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installa
       return { ok: false, reason: "playing" }
     }
 
-    const { files, linked } = await walkModConfigs(installation)
-    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })), linked }
+    const { files, linked, unreadable } = await walkModConfigs(installation)
+    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })), linked, unreadable }
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [GET_MOD_CONFIGS] Could not list the ModConfig folder.`)
     logMessage("debug", `${LOG_PREFIX} [GET_MOD_CONFIGS] ${getErrorMessage(err)}`)

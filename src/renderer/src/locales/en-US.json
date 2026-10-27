@@ -596,6 +596,7 @@
       "exportModConfigsBadName": "Windows does not accept this file name",
       "exportModConfigsCollides": "Differs from another config file only in letter case",
       "exportModConfigsLinked": "Links cannot travel in a modpack.",
+      "exportModConfigsUnreadableName": "This file name could not be read.",
       "exportModConfigsPlaying": "This Installation is playing. Its mod configs can be listed once the game has closed.",
       "exportModConfigsUnreadable": "This Installation's mod config folder could not be read, so the modpack cannot carry its configs.",
       "exportModConfigsSkip": "Export without configs",
