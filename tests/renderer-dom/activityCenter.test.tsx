@@ -1670,6 +1670,69 @@ describe("toast queue pointer handoff", () => {
       vi.useRealTimers()
     }
   })
+
+  it("delivers the assigned or generated record id through onCreated (#752)", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    let assignedId: string | undefined
+    act(() => {
+      result.current.addNotification("Custom id notice", "info", {
+        id: "custom-id-123",
+        onCreated: (id) => {
+          assignedId = id
+        }
+      })
+    })
+
+    expect(assignedId).toBe("custom-id-123")
+    expect(result.current.history.find((record) => record.id === "custom-id-123")).toBeDefined()
+
+    let generatedId: string | undefined
+    act(() => {
+      result.current.addNotification("Generated id notice", "info", {
+        onCreated: (id) => {
+          generatedId = id
+        }
+      })
+    })
+
+    expect(generatedId).toBeDefined()
+    expect(generatedId).not.toBe("custom-id-123")
+    expect(result.current.history.find((record) => record.id === generatedId)).toBeDefined()
+  })
+
+  it("resolves an actionable notice and dismisses its on-screen banner (#752)", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    let noticeId = ""
+    act(() => {
+      result.current.addNotification("A mod update is available", "info", {
+        id: "test-update-notice",
+        actions: [{ id: "view", label: "View updates" }],
+        onCreated: (id) => {
+          noticeId = id
+        }
+      })
+    })
+
+    expect(result.current.activeToasts.map((toast) => toast.record.id)).toContain("test-update-notice")
+    const initialRecord = result.current.history.find((record) => record.id === noticeId)
+    expect(initialRecord?.resolved).toBe(false)
+
+    act(() => {
+      result.current.resolveNotification(noticeId, "Resolved externally")
+    })
+
+    expect(result.current.activeToasts.map((toast) => toast.record.id)).not.toContain("test-update-notice")
+
+    const resolvedRecord = result.current.history.find((record) => record.id === noticeId)
+    expect(resolvedRecord?.resolved).toBe(true)
+    expect(resolvedRecord?.resolvedWith).toBe("Resolved externally")
+    expect(resolvedRecord?.seen).toBe(true)
+    expect(resolvedRecord?.read).toBe(true)
+  })
 })
 
 function ProbeRemoveLast(): JSX.Element {
