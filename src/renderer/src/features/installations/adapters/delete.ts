@@ -1,14 +1,19 @@
 import type { DeleteInstallationFailure, DeleteInstallationPorts, InstallationDeleteSnapshot } from "@domain/installations/delete"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { createInstallationLeasePort } from "@renderer/adapters/installationLease"
 
-/** Wires the delete service onto the renderer. It only needs to remove paths. */
+/** Wires the delete service onto the renderer. */
 export function createDeleteInstallationPorts(): DeleteInstallationPorts {
-  return { fileSystem: createFileSystemPort() }
+  return {
+    fileSystem: createFileSystemPort(),
+    installationLease: createInstallationLeasePort()
+  }
 }
 
 /** Copies the config-owned installation into the plain shape the service reads. */
 export function toInstallationDeleteSnapshot(installation: InstallationType): InstallationDeleteSnapshot {
   return {
+    id: installation.id,
     path: installation.path,
     backups: installation.backups.map((backup) => ({ id: backup.id, path: backup.path, isDeleting: backup._deleting ?? false, isRestoring: backup._restoring ?? false })),
     worldBackups: (installation.worldBackups ?? []).map((backup) => ({ id: backup.id, path: backup.path, isDeleting: backup._deleting ?? false, isRestoring: backup._restoring ?? false })),
