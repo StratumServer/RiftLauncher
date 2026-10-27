@@ -329,4 +329,36 @@ describe("ListInstallations", () => {
       expect(screen.getByText("Install B")).toBeTruthy()
     })
   })
+
+  describe("an Installation held by another operation on the host (#736)", () => {
+    it("refuses to delete with data and notifies the player when the host says the Installation is busy", async () => {
+      const user = userEvent.setup()
+      const deletePath = vi.fn(async () => true)
+      const acquireLease = vi.fn(async () => ({ ok: false as const, reason: "busy" as const }))
+      const releaseLease = vi.fn(async () => undefined)
+      installMockWindowApi({
+        configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+        installationActivity: { acquireLease, releaseLease },
+        pathsManager: { deletePath }
+      })
+
+      renderWithProviders(
+        <TaskProvider>
+          <ListInstallations />
+          <NotificationsOverlay />
+        </TaskProvider>,
+        { route: "/installations" }
+      )
+
+      await screen.findByText("Install A")
+      await user.click(screen.getByTitle("Delete Installation"))
+      await user.click(await screen.findByLabelText("Delete data"))
+      await user.click(screen.getByTitle("Delete"))
+
+      expect(acquireLease).toHaveBeenCalledWith("install-a", expect.any(String))
+      expect(deletePath).not.toHaveBeenCalled()
+      expect(screen.getByText("Install A")).toBeTruthy()
+      expect(await screen.findByText("You can't delete this Installation while it's in use.")).toBeTruthy()
+    })
+  })
 })

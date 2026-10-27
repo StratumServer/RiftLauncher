@@ -1,10 +1,11 @@
-import type { FileSystem } from "../ports"
+import type { FileSystem, InstallationLease } from "../ports"
 import { refuse } from "../refusal"
 import type { BackupRecord } from "./backup"
 import { deleteInstallationBackup } from "./backupDeletion"
 
 /** The installation state a delete decision needs, copied out of wherever it lives. */
 export interface InstallationDeleteSnapshot {
+  id: string
   path: string
   backups: readonly (Pick<BackupRecord, "id" | "path"> & { isDeleting?: boolean; isRestoring?: boolean })[]
   worldBackups?: readonly (Pick<BackupRecord, "id" | "path"> & { isDeleting?: boolean; isRestoring?: boolean })[]
@@ -26,6 +27,7 @@ export type DeleteInstallationResult =
 
 export interface DeleteInstallationPorts {
   fileSystem: Pick<FileSystem, "exists" | "remove">
+  installationLease: InstallationLease
 }
 
 export interface DeleteInstallationInput {
@@ -73,31 +75,38 @@ export async function deleteInstallation(ports: DeleteInstallationPorts, input: 
 
   if (!deleteData) return { ok: true, failedBackupPaths: [] }
 
-  if (!(await ports.fileSystem.remove(installation.path))) return refuse("data-delete-failed")
-  events.onDataDeleted?.()
+  const lease = await ports.installationLease.acquire(installation.id)
+  if (!lease.ok) return refuse(lease.reason === "playing" ? "installation-playing" : "installation-busy")
 
-  const failedBackupPaths: string[] = []
+  try {
+    if (!(await ports.fileSystem.remove(installation.path))) return refuse("data-delete-failed")
+    events.onDataDeleted?.()
 
-  for (const backup of [...installation.backups, ...(installation.worldBackups ?? [])]) {
-    const result = await deleteInstallationBackup(
-      { fileSystem: ports.fileSystem },
-      { backup: { id: backup.id, path: backup.path, isDeleting: backup.isDeleting ?? false, isRestoring: backup.isRestoring ?? false } }
-    )
+    const failedBackupPaths: string[] = []
 
-    // Already on its way out, or in, through another operation (a manual
-    // delete or restore in flight). Neither this operation's success nor its
-    // failure, so it is reported as neither: removing it here would race the
-    // same file, and counting it as a failure would be misleading when the
-    // other operation is the one that actually succeeds.
-    if (!result.ok && result.reason === "backup-in-use") continue
+    for (const backup of [...installation.backups, ...(installation.worldBackups ?? [])]) {
+      const result = await deleteInstallationBackup(
+        { fileSystem: ports.fileSystem },
+        { backup: { id: backup.id, path: backup.path, isDeleting: backup.isDeleting ?? false, isRestoring: backup.isRestoring ?? false } }
+      )
 
-    if (result.ok) {
-      events.onBackupDeleted?.(backup.path)
-    } else {
-      failedBackupPaths.push(backup.path)
-      events.onBackupDeleteFailed?.(backup.path)
+      // Already on its way out, or in, through another operation (a manual
+      // delete or restore in flight). Neither this operation's success nor its
+      // failure, so it is reported as neither: removing it here would race the
+      // same file, and counting it as a failure would be misleading when the
+      // other operation is the one that actually succeeds.
+      if (!result.ok && result.reason === "backup-in-use") continue
+
+      if (result.ok) {
+        events.onBackupDeleted?.(backup.path)
+      } else {
+        failedBackupPaths.push(backup.path)
+        events.onBackupDeleteFailed?.(backup.path)
+      }
     }
-  }
 
-  return { ok: true, failedBackupPaths }
+    return { ok: true, failedBackupPaths }
+  } finally {
+    lease.release()
+  }
 }
