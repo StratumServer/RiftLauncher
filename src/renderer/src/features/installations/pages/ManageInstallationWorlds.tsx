@@ -281,7 +281,13 @@ function ManageInstallationWorlds(): JSX.Element {
               <p className="text-zinc-400">{installation.name}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <select className="bg-zinc-800 rounded p-2" value={targetId} onChange={(event) => setTargetId(event.target.value)} aria-label={t("features.worlds.transferTarget")}>
+              <select
+                className="bg-zinc-800 rounded p-2"
+                value={targetId}
+                onChange={(event) => setTargetId(event.target.value)}
+                aria-label={t("features.worlds.transferTarget")}
+                aria-describedby={target && worldVersionWarning(installation.version, target.version) ? "target-installation-version-warning" : undefined}
+              >
                 <option value="">{t("features.worlds.transferTarget")}</option>
                 {installations
                   .filter((candidate) => candidate.id !== installation.id)
@@ -292,11 +298,14 @@ function ManageInstallationWorlds(): JSX.Element {
                     </option>
                   ))}
               </select>
-              {target && worldVersionWarning(installation.version, target.version) && (
-                <p role="status" className="max-w-xs text-right text-xs text-amber-300">
-                  {t("features.worlds.versionCompatibilityWarning")}
-                </p>
-              )}
+              <p
+                id="target-installation-version-warning"
+                role="status"
+                aria-live="polite"
+                className={`max-w-xs text-right text-xs text-amber-300 ${target && worldVersionWarning(installation.version, target.version) ? "" : "sr-only"}`}
+              >
+                {target && worldVersionWarning(installation.version, target.version) ? t("features.worlds.versionCompatibilityWarning") : ""}
+              </p>
             </div>
           </div>
           {loading && <p className="relative p-4 text-center text-zinc-400">{t("generic.reloading")}</p>}

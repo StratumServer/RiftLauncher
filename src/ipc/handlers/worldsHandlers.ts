@@ -299,10 +299,14 @@ async function deleteWorld(installationId: unknown, requestedName: unknown): Pro
     try {
       await fse.remove(world.path)
       return { ok: true as const }
-    } catch {
+    } catch (error) {
+      logMessage("warn", `${LOG_PREFIX} [DELETE] Could not finish removing this world save.`)
+      logMessage("debug", `${LOG_PREFIX} [DELETE] ${getErrorMessage(error)}`)
       return failure("operation-failed")
     }
-  } catch {
+  } catch (error) {
+    logMessage("warn", `${LOG_PREFIX} [DELETE] Could not finish deleting this world.`)
+    logMessage("debug", `${LOG_PREFIX} [DELETE] ${getErrorMessage(error)}`)
     return failure("operation-failed")
   } finally {
     lease.release()
@@ -400,6 +404,7 @@ async function transferWorld(sourceId: unknown, requestedName: unknown, targetId
       if (!world) return failure("world-not-found")
       if (!(await assertWorldWritable(world))) return failure("world-has-sidecars")
       await assertManagedPath(world.path, "world")
+      const stats = await fse.stat(world.path)
       const names = await fse.readdir(targetSaves).catch(() => [])
       const targetName = collisionFreeWorldName(world.name, names.filter(isSafeWorldName))
       const warning = worldVersionWarning(source.version, target.version)
@@ -407,6 +412,7 @@ async function transferWorld(sourceId: unknown, requestedName: unknown, targetId
       const targetFile = worldPath(targetSaves, targetName)
       await assertManagedPath(targetFile, "destination world", { allowMissing: true })
       await fse.copyFile(world.path, targetFile, constants.COPYFILE_EXCL)
+      await fse.utimes(targetFile, stats.atime, stats.mtime).catch(() => undefined)
       if (modeValue === "move") {
         try {
           await fse.remove(world.path)
