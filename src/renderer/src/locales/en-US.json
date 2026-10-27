@@ -198,6 +198,7 @@
       "installationNameMinMaxCharacters": "Installation name must contain between {{min}} and {{max}} characters.",
       "defaultName": "My New Installation",
       "folderAlreadyInUse": "That folder is already in use.",
+      "pickFolderAgain": "RiftLauncher only trusts a folder for ten minutes after you pick it, and that time is up. Pick the folder again with the Browse button, then add it.",
       "folderNestedWithAnother": "That folder is inside or around another Installation, a VS Version or the Backups folder, or it is or holds the Installations or VS Versions folder. Restoring or deleting one would erase the other. Pick a separate folder.",
       "installationSuccessfullyAdded": "Installation added successfully.",
       "errorAddingInstallation": "The Installation couldn't be added. The log has the details.",

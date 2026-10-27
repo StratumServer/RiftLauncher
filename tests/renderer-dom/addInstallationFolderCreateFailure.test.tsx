@@ -31,9 +31,9 @@ function renderAddInstallation(): ReturnType<typeof renderWithProviders> {
 }
 
 describe("AddInstallation, folder creation failure", () => {
-  it("notifies the folder creation failure and does not add the Installation when ensurePathExists resolves false", async () => {
+  it("notifies the folder creation failure and does not add the Installation when ensurePathExists resolves failed", async () => {
     const user = userEvent.setup()
-    const ensurePathExists = vi.fn(async () => false)
+    const ensurePathExists = vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: false, reason: "failed" }))
     installMockWindowApi({
       configManager: {
         getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] }))
@@ -54,6 +54,31 @@ describe("AddInstallation, folder creation failure", () => {
     await screen.findByText("Couldn't create the folder for this Installation. Check that RiftLauncher can write to that location, then try again.")
 
     // Neither the success path nor the navigation away from the form happened.
+    expect(screen.queryByText("Installation added successfully.")).toBeNull()
+    expect(screen.queryByText("installations-list")).toBeNull()
+  })
+
+  it("notifies to pick the folder again when user approval has expired (#742)", async () => {
+    const user = userEvent.setup()
+    const ensurePathExists = vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: false, reason: "unauthorized-path" }))
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] }))
+      },
+      pathsManager: { ensurePathExists }
+    })
+
+    renderAddInstallation()
+
+    await waitFor(() => expect((screen.getByPlaceholderText("Installation folder") as HTMLInputElement).value).not.toBe(""))
+    await user.click(await screen.findByText("1.20.0"))
+
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(ensurePathExists).toHaveBeenCalledTimes(1))
+
+    await screen.findByText("RiftLauncher only trusts a folder for ten minutes after you pick it, and that time is up. Pick the folder again with the Browse button, then add it.")
+
     expect(screen.queryByText("Installation added successfully.")).toBeNull()
     expect(screen.queryByText("installations-list")).toBeNull()
   })

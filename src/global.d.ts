@@ -635,6 +635,11 @@ declare global {
   /** RUN_INSTALLER's verdict. `ok: false` means nothing was installed. */
   type InstallerRunResult = { ok: true } | { ok: false; reason: InstallerRunFailureReason }
 
+  type EnsurePathExistsFailureReason = "unauthorized-path" | "failed"
+
+  /** ENSURE_PATH_EXISTS' verdict. `ok: false` means the folder does not exist and was not created. */
+  type EnsurePathExistsResult = { ok: true } | { ok: false; reason: EnsurePathExistsFailureReason }
+
   /**
    * Why SAVE_CONFIG refused to persist the config it was handed. The
    * renderer sends the whole config on every change; a persistent refusal

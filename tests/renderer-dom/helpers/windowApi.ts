@@ -120,7 +120,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       movePath: vi.fn(notMocked("pathsManager.movePath")),
       checkPathEmpty: vi.fn(async () => true),
       checkPathExists: vi.fn(async () => false),
-      ensurePathExists: vi.fn(async () => true),
+      ensurePathExists: vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: true })),
       openPathOnFileExplorer: vi.fn(async () => {}),
       downloadOnPath: vi.fn(notMocked("pathsManager.downloadOnPath")),
       extractOnPath: vi.fn(notMocked("pathsManager.extractOnPath")),
