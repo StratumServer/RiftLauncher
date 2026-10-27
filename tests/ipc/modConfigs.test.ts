@@ -1234,6 +1234,117 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
+  it("refuses a folder swapped for a link after the pre-pass and reads, copies and writes nothing through it (#626)", async () => {
+    writeConfig()
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "target.json"), "theirs-secret", "utf-8")
+
+    mkdirSync(join(modConfigFolder(), "swapped"), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "legit.json"), '{"legit":1}', "utf-8")
+    writeFileSync(join(modConfigFolder(), "swapped", "target.json"), '{"target":1}', "utf-8")
+
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const readFile = vi.spyOn(fse, "readFile")
+    const copy = vi.spyOn(fse, "copy")
+
+    // Intercept during the displacement of legit.json: this runs after the pre-pass has validated
+    // both destinations, but before applyOneConfigEntry runs on swapped/target.json.
+    let swapped = false
+    copy.mockImplementation(async (from, to) => {
+      if (!swapped && String(from).endsWith("legit.json")) {
+        swapped = true
+        rmSync(join(modConfigFolder(), "swapped"), { recursive: true, force: true })
+        symlinkSync(outside, join(modConfigFolder(), "swapped"))
+      }
+      copyFileSync(String(from), String(to))
+    })
+
+    try {
+      const applied = await applyModConfigsHandler()(event, installationPath, [
+        { name: "legit.json", ...entry('{"legit":2}') },
+        { name: "swapped/target.json", ...entry('{"target":2}') }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.failed, [{ name: "swapped/target.json", reason: "write-failed" }])
+      assert.deepEqual(applied.applied, [{ name: "legit.json", kind: "replace" }])
+      assert.notEqual(applied.backupFolder, "")
+      assert.equal(existsSync(applied.backupFolder), true)
+      assert.equal(readFileSync(join(applied.backupFolder, "legit.json"), "utf-8"), '{"legit":1}')
+      assert.equal(existsSync(join(applied.backupFolder, "swapped")), false)
+      assert.equal(existsSync(join(applied.backupFolder, "target.json")), false)
+
+      // Nothing was read from or copied from the outside directory.
+      const outsideRead = readFile.mock.calls.some(([target]) => String(target).startsWith(outside) || String(target).includes("swapped/target.json"))
+      assert.equal(outsideRead, false, "outside file must not be read")
+
+      const outsideCopy = copy.mock.calls.some(([from]) => String(from).startsWith(outside) || String(from).includes("swapped/target.json"))
+      assert.equal(outsideCopy, false, "outside file must not be copied")
+
+      // The outside file remains unchanged.
+      assert.equal(readFileSync(join(outside, "target.json"), "utf-8"), "theirs-secret")
+    } finally {
+      readFile.mockRestore()
+      copy.mockRestore()
+    }
+  })
+
+  it("refuses a destination file swapped for a link after the pre-pass and reads, copies and writes nothing through it (#626)", async () => {
+    writeConfig()
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "target.json"), "theirs-secret", "utf-8")
+
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "legit.json"), '{"legit":1}', "utf-8")
+    writeFileSync(join(modConfigFolder(), "target.json"), '{"target":1}', "utf-8")
+
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const readFile = vi.spyOn(fse, "readFile")
+    const copy = vi.spyOn(fse, "copy")
+
+    let swapped = false
+    copy.mockImplementation(async (from, to) => {
+      if (!swapped && String(from).endsWith("legit.json")) {
+        swapped = true
+        rmSync(join(modConfigFolder(), "target.json"), { force: true })
+        symlinkSync(join(outside, "target.json"), join(modConfigFolder(), "target.json"))
+      }
+      copyFileSync(String(from), String(to))
+    })
+
+    try {
+      const applied = await applyModConfigsHandler()(event, installationPath, [
+        { name: "legit.json", ...entry('{"legit":2}') },
+        { name: "target.json", ...entry('{"target":2}') }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.failed, [{ name: "target.json", reason: "write-failed" }])
+      assert.deepEqual(applied.applied, [{ name: "legit.json", kind: "replace" }])
+      assert.notEqual(applied.backupFolder, "")
+      assert.equal(existsSync(applied.backupFolder), true)
+      assert.equal(readFileSync(join(applied.backupFolder, "legit.json"), "utf-8"), '{"legit":1}')
+      assert.equal(existsSync(join(applied.backupFolder, "target.json")), false)
+
+      const outsideRead = readFile.mock.calls.some(([target]) => String(target).startsWith(outside))
+      assert.equal(outsideRead, false, "outside file must not be read")
+
+      const outsideCopy = copy.mock.calls.some(([from]) => String(from).startsWith(outside))
+      assert.equal(outsideCopy, false, "outside file must not be copied")
+
+      assert.equal(readFileSync(join(outside, "target.json"), "utf-8"), "theirs-secret")
+    } finally {
+      readFile.mockRestore()
+      copy.mockRestore()
+    }
+  })
+
   it("refuses with no backups folder rather than writing over something it cannot copy", async () => {
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), "mine", "utf-8")
