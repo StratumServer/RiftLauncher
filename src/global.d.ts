@@ -768,10 +768,14 @@ declare global {
    * `configs`, which the export builds its rows from and can only carry what it reads, and they are
    * names and nothing else: no link was read or followed to where it points.
    *
+   * `unreadable` names entries whose names on disk are not valid UTF-8. They are kept out of
+   * `configs` because invalid UTF-8 filenames cannot travel in a JSON modpack, but they are reported
+   * by name so the export picker can show disabled rows instead of failing the whole export.
+   *
    * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
    *   "only while the game is not running", so this is the game's rule, not the launcher's.
    */
-  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[]; unreadable?: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
 
   /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"

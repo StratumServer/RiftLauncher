@@ -51,12 +51,13 @@ const COLLIDE_LOWER: ModConfigListingEntry = { name: "automap.json", bytes: 25 }
 function mountWithConfigs(
   configs: ModConfigListingEntry[],
   exportOutcome: { success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string } = { success: true, path: "/out/pack.json" },
-  linked: string[] = []
+  linked: string[] = [],
+  unreadable: string[] = []
 ): {
   answerNextRead: (value: ModConfigsReadResult) => void
   exportModpack: ReturnType<typeof vi.fn>
 } {
-  let answer: ModConfigsReadResult = { ok: true, configs, linked }
+  let answer: ModConfigsReadResult = { ok: true, configs, linked, unreadable }
   const exportModpack = vi.fn(async () => exportOutcome)
 
   installMockWindowApi({
@@ -247,6 +248,17 @@ describe("Manage Mods: the mod config export picker", () => {
       expect(box.disabled).toBe(true)
       expect(within(box.closest("li") as HTMLElement).getByText("Links cannot travel in a modpack.")).toBeTruthy()
     }
+  })
+
+  it("shows unreadable filename entries as disabled rows that will not travel (#669)", async () => {
+    mountWithConfigs([ROOM_SIZE], { success: true }, [], ["f\uFFFD.json"])
+    await askForConfigs()
+    await openThePicker()
+
+    const box = (await screen.findByLabelText(/^f\uFFFD\.json/, {}, { timeout: 3000 })) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    expect(box.disabled).toBe(true)
+    expect(within(box.closest("li") as HTMLElement).getByText("This file name could not be read.")).toBeTruthy()
   })
 
   it("does not prompt to untick anything when no file can travel", async () => {
