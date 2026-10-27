@@ -6,6 +6,7 @@ import { join, resolve } from "node:path"
 import { afterEach, describe, it } from "vitest"
 
 import { describeLauncherExit, explainSocketClose, readLauncherExit, readLogTails } from "../e2e/launcher-death"
+import { askForUnavailableRuntime, isMissingDotnetResult } from "../e2e/missing-runtime"
 
 /**
  * What the packaged Windows conformance run keeps of a launcher that dies on it (#614).
@@ -127,5 +128,52 @@ describe("the packaged conformance workflow", () => {
     assert.match(crashEventsStep, /^ {8}if: failure\(\)$/m)
     assert.match(crashEventsStep, /ProviderName = 'Application Error', 'Windows Error Reporting'/)
     assert.match(crashEventsStep, /RiftLauncher\.exe/)
+  })
+})
+
+describe("the missing .NET runtime phase", () => {
+  const runtimeConfig = JSON.stringify({
+    runtimeOptions: {
+      tfm: "net8.0",
+      framework: { name: "Microsoft.NETCore.App", version: "8.0.0" },
+      frameworks: [
+        { name: "Microsoft.NETCore.App", version: "8.0.0" },
+        { name: "Microsoft.WindowsDesktop.App", version: "8.0.0" }
+      ],
+      configProperties: { "System.GC.Server": false }
+    }
+  })
+
+  it("asks every framework entry for a version that cannot exist and keeps the rest of the file", () => {
+    const { text, changes } = askForUnavailableRuntime(`﻿${runtimeConfig}`)
+    const options = JSON.parse(text).runtimeOptions
+
+    assert.equal(options.framework.version, "99.0.0")
+    assert.deepEqual(
+      options.frameworks.map((entry: { version: string }) => entry.version),
+      ["99.0.0", "99.0.0"]
+    )
+    assert.equal(options.tfm, "net8.0")
+    assert.deepEqual(options.configProperties, { "System.GC.Server": false })
+    assert.deepEqual(changes, [
+      { name: "Microsoft.NETCore.App", from: "8.0.0" },
+      { name: "Microsoft.NETCore.App", from: "8.0.0" },
+      { name: "Microsoft.WindowsDesktop.App", from: "8.0.0" }
+    ])
+  })
+
+  it("refuses a file that names no framework, since the run would prove nothing", () => {
+    assert.throws(() => askForUnavailableRuntime(JSON.stringify({ runtimeOptions: { tfm: "net8.0" } })), /no framework/)
+    assert.throws(() => askForUnavailableRuntime("{}"), /runtimeOptions/)
+  })
+
+  it("accepts exactly a missing-dotnet refusal, with a settingsSetAside only when it holds nothing", () => {
+    assert.equal(isMissingDotnetResult({ ok: false, reason: "missing-dotnet" }), true)
+    assert.equal(isMissingDotnetResult({ ok: false, reason: "missing-dotnet", settingsSetAside: undefined }), true)
+    assert.equal(isMissingDotnetResult({ ok: false, reason: "missing-dotnet", settingsSetAside: "clientsettings.bak" }), false)
+    assert.equal(isMissingDotnetResult({ ok: false, reason: "launch-failed" }), false)
+    assert.equal(isMissingDotnetResult({ ok: true, exitCode: 0 }), false)
+    assert.equal(isMissingDotnetResult({ ok: false, reason: "missing-dotnet", extra: 1 }), false)
+    assert.equal(isMissingDotnetResult(null), false)
   })
 })
