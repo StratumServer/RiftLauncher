@@ -398,6 +398,36 @@ describe("ImportModpackPopup, after a ModDB request times out", () => {
     expect(await screen.findAllByText("Recovered Mod")).toHaveLength(7)
     expect(queryURL).toHaveBeenCalledTimes(11)
   })
+
+  it("stops querying remaining mods when a request times out during connect (issue #750)", async () => {
+    const manifest: ModpackManifestType = {
+      name: "Connect stall pack",
+      gameVersion: GAME_VERSION,
+      mods: Array.from({ length: 7 }, (_, index) => ({ modid: `connect-stall-${index + 1}`, version: "1.0.0", name: `Stall Mod ${index + 1}` }))
+    }
+    const requests: Array<{ modid: string; resolve: (response: string) => void; reject: (error: Error) => void }> = []
+    const queryURL = vi.fn((url: string): Promise<string> => {
+      const modid = url.split("/mod/")[1] ?? ""
+      return new Promise<string>((resolve, reject) => requests.push({ modid, resolve, reject }))
+    })
+    installMockWindowApi({ netManager: { queryURL } })
+    renderWithProviders(
+      <TaskProvider>
+        <ImportModpackPopup isOpen manifest={manifest} close={(): void => {}} installation={installation()} installedMods={[]} onFinish={(): void => {}} />
+      </TaskProvider>
+    )
+
+    await waitFor(() => expect(queryURL).toHaveBeenCalledTimes(4))
+    requests[0]!.reject(new Error("Error invoking remote method 'query-url': Error: net::ERR_TIMED_OUT"))
+    await waitFor(() => expect(modDetailLookups.queuedCount).toBe(0))
+    expect(queryURL).toHaveBeenCalledTimes(4)
+
+    for (const request of requests.slice(1)) request.resolve(JSON.stringify({ statuscode: "404" }))
+
+    expect(await screen.findAllByText("Couldn't reach the mod database")).toHaveLength(4)
+    expect(await screen.findAllByText("Not on the mod database")).toHaveLength(3)
+    expect(queryURL).toHaveBeenCalledTimes(4)
+  })
 })
 
 /**

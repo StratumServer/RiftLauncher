@@ -45,10 +45,14 @@ export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; o
       logMods("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions.`)
       logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions: ${err}`)
       // invoke() wraps the handler's Error with its own prefix, so match the transport's exact
-      // timeout message inside that wrapper. Other network failures and malformed bodies must not
-      // stop a batch: they fail quickly and each remaining Mod can still be checked.
+      // timeout message inside that wrapper. Chromium connection timeouts (net::ERR_TIMED_OUT,
+      // net::ERR_CONNECTION_TIMED_OUT) hang for ~30 s just like internal timer expirations and
+      // must abort the batch so subsequent waves do not stall. Other network failures (connection
+      // refused, DNS) and malformed bodies must not stop a batch: they fail quickly and each
+      // remaining Mod can still be checked.
       const message = err instanceof Error ? err.message : String(err)
-      return { status: "failed", timedOut: message.includes("Network request timed out") }
+      const timedOut = message.includes("Network request timed out") || message.includes("net::ERR_TIMED_OUT") || message.includes("net::ERR_CONNECTION_TIMED_OUT")
+      return { status: "failed", timedOut }
     }
   }, [])
 }
