@@ -31,9 +31,9 @@ Double click the downloaded file. The installer lets you pick where to install R
 
 {% step %}
 
-### Install .NET 7, 8 and 10
+### Install the .NET Desktop Runtime 7, 8 and 10
 
-If you already played Vintage Story on this machine before, these are likely installed already and you can skip this step. Otherwise grab all three from the [.NET downloads page](https://dotnet.microsoft.com/download/dotnet): Vintage Story versions need different .NET major versions depending on when they were built, so having 7, 8 and 10 covers you whichever version you end up playing.
+If you already played Vintage Story on this machine before, these are likely installed already and you can skip this step. Otherwise grab all three from the [.NET downloads page](https://dotnet.microsoft.com/download/dotnet): Vintage Story versions need different .NET major versions depending on when they were built, so having 7, 8 and 10 covers you whichever version you end up playing. On each version's page, take the **.NET Desktop Runtime** for x64. The Windows build of the game needs the desktop one, and the plain .NET Runtime alone is not enough.
 
 Once the downloads are complete just install them.
 {% endstep %}
