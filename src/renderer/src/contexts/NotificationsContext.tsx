@@ -376,14 +376,23 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         return
       }
 
-      const { restored, preserved, copyName } = notice
-      const key = preserved
-        ? restored
-          ? "notifications.body.configUnreadableRestored"
-          : "notifications.body.configUnreadableReset"
-        : restored
-          ? "notifications.body.configUnreadableRestoredUnsaved"
-          : "notifications.body.configUnreadableResetUnsaved"
+      const { restored, preserved, copyName, cause } = notice
+      const isNotObject = cause === "not-an-object"
+      const key = isNotObject
+        ? preserved
+          ? restored
+            ? "notifications.body.configNotAnObjectRestored"
+            : "notifications.body.configNotAnObjectReset"
+          : restored
+            ? "notifications.body.configNotAnObjectRestoredUnsaved"
+            : "notifications.body.configNotAnObjectResetUnsaved"
+        : preserved
+          ? restored
+            ? "notifications.body.configUnreadableRestored"
+            : "notifications.body.configUnreadableReset"
+          : restored
+            ? "notifications.body.configUnreadableRestoredUnsaved"
+            : "notifications.body.configUnreadableResetUnsaved"
       addNotificationRef.current(t(key, preserved ? { copyName } : undefined), "warning", { duration: null })
     })
 
