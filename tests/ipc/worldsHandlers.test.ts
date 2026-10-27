@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import fse from "fs-extra"
 
 import type { IpcMainInvokeEvent } from "electron"
 
@@ -947,5 +948,69 @@ describe("worlds IPC handlers", () => {
     const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
     const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
     expect(savedBackups.map((b) => b.id)).toContain("70000000-0000-4000-8000-000000000007")
+  })
+
+  it("preserves source world modification date when copying or moving (#630)", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const targetPath = join(installationsRoot, "install-b")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    mkdirSync(join(targetPath, "Saves"), { recursive: true })
+    const sourceFile = join(sourcePath, "Saves", "World.vcdbs")
+    writeFileSync(sourceFile, "world-content", "utf8")
+    const originalTime = new Date("2026-01-15T12:00:00Z")
+    utimesSync(sourceFile, originalTime, originalTime)
+    const originalMtime = statSync(sourceFile).mtimeMs
+
+    writeConfig([installation("install-a", sourcePath, "1.22.7"), installation("install-b", targetPath, "1.22.7")])
+    const event = await createTrustedEvent()
+
+    // 1. Copy
+    const copyResult = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
+    assert.deepEqual(copyResult, { ok: true, targetWorldName: "World.vcdbs" })
+    const copiedTarget = join(targetPath, "Saves", "World.vcdbs")
+    expect(statSync(copiedTarget).mtimeMs).toBe(originalMtime)
+
+    // 2. Move (with a new source file)
+    const moveSource = join(sourcePath, "Saves", "MoveWorld.vcdbs")
+    writeFileSync(moveSource, "move-content", "utf8")
+    const moveTime = new Date("2025-06-01T08:00:00Z")
+    utimesSync(moveSource, moveTime, moveTime)
+    const moveMtime = statSync(moveSource).mtimeMs
+
+    const moveResult = await handler("worlds-transfer")(event, "install-a", "MoveWorld.vcdbs", "install-b", "move")
+    assert.deepEqual(moveResult, { ok: true, targetWorldName: "MoveWorld.vcdbs" })
+    const movedTarget = join(targetPath, "Saves", "MoveWorld.vcdbs")
+    expect(statSync(movedTarget).mtimeMs).toBe(moveMtime)
+    expect(existsSync(moveSource)).toBe(false)
+  })
+
+  it("logs a warning and debug line when deleteWorld fails (#630)", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    const file = join(sourcePath, "Saves", "World.vcdbs")
+    writeFileSync(file, "world", "utf8")
+    writeConfig([installation("install-a", sourcePath)])
+    const event = await createTrustedEvent()
+
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+
+    // Case 1: assertManagedDeletionPath rejects (outer catch)
+    assertManagedDeletionPathSpy.mockRejectedValueOnce(new TypeError("Protected path"))
+    const deleteFailOuter = await handler("worlds-delete")(event, "install-a", "World.vcdbs")
+    assert.deepEqual(deleteFailOuter, { ok: false, reason: "operation-failed" })
+    expect(logSpy).toHaveBeenCalledWith("warn", "[back] [ipc] [ipc/handlers/worldsHandlers.ts] [DELETE] Could not finish deleting this world.")
+    expect(logSpy).toHaveBeenCalledWith("debug", expect.stringContaining("Protected path"))
+
+    logSpy.mockClear()
+
+    // Case 2: fse.remove throws (inner catch)
+    const removeSpy = vi.spyOn(fse, "remove").mockRejectedValueOnce(new Error("EACCES permission denied"))
+    const deleteFailInner = await handler("worlds-delete")(event, "install-a", "World.vcdbs")
+    assert.deepEqual(deleteFailInner, { ok: false, reason: "operation-failed" })
+    expect(logSpy).toHaveBeenCalledWith("warn", "[back] [ipc] [ipc/handlers/worldsHandlers.ts] [DELETE] Could not finish removing this world save.")
+    expect(logSpy).toHaveBeenCalledWith("debug", expect.stringContaining("EACCES permission denied"))
+
+    removeSpy.mockRestore()
+    logSpy.mockRestore()
   })
 })

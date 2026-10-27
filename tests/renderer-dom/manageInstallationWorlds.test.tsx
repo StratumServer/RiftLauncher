@@ -954,3 +954,56 @@ describe.each(JOURNAL_REFUSAL)("a world left with its journal files and no game 
     expect(api.worldsManager[call]).toHaveBeenCalledTimes(1)
   })
 })
+
+describe("target installation picker accessibility and live region warning (#630)", () => {
+  it("mounts the live region and announces the warning when a different-version target is picked", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            installations: [
+              { ...anInstallation([]), id: "install-a", version: "1.20.0" },
+              { ...anInstallation([]), id: "install-same", name: "Same Version", version: "1.20.0" },
+              { ...anInstallation([]), id: "install-diff", name: "Diff Version", version: "1.19.0" }
+            ]
+          })
+        )
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 10, lastModified: 1, isDefault: false, backupCount: 0 }]
+        }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const select = await screen.findByRole("combobox")
+    const warning = screen.getByRole("status")
+
+    // Initially: no target selected, warning is mounted with empty text and sr-only class
+    expect(warning.id).toBe("target-installation-version-warning")
+    expect(warning.textContent).toBe("")
+    expect(warning.className).toContain("sr-only")
+    expect(select.getAttribute("aria-describedby")).toBeNull()
+
+    // Pick same version target: no warning
+    await user.selectOptions(select, "install-same")
+    expect(warning.textContent).toBe("")
+    expect(warning.className).toContain("sr-only")
+    expect(select.getAttribute("aria-describedby")).toBeNull()
+
+    // Pick different version target: warning is displayed and associated via aria-describedby
+    await user.selectOptions(select, "install-diff")
+    expect(warning.textContent).toBe("A world opened with a newer Vintage Story version usually will not work with an older one.")
+    expect(warning.className).not.toContain("sr-only")
+    expect(select.getAttribute("aria-describedby")).toBe("target-installation-version-warning")
+  })
+})
