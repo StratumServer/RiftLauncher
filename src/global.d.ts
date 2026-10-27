@@ -683,7 +683,12 @@ declare global {
    * - `kind: "import-failed"`: the first-run copy of VS Launcher's data failed (#708). The launcher
    *   started on an empty profile and leaves a marker so the next start tries the import again.
    */
-  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" } | { kind: "import-failed" }
+  type ConfigRecoveryUnreadableCause = "invalid-json" | "not-an-object"
+
+  type ConfigRecoveryNotice =
+    | { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null; cause?: ConfigRecoveryUnreadableCause }
+    | { kind: "read-failed" }
+    | { kind: "import-failed" }
 
   /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every

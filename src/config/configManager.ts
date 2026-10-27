@@ -289,14 +289,14 @@ async function loadConfigFromDisk(): Promise<ConfigType> {
     // strip here a perfectly valid config.json would be sent down the recovery path instead.
     parsedDocument = JSON.parse(rawText.replace(/^\uFEFF/, ""))
   } catch (err) {
-    return await recoverFromUnreadableConfig(err)
+    return await recoverFromUnreadableConfig(err, "invalid-json")
   }
 
   if (!isRecord(parsedDocument)) {
     // Valid JSON that is not an object ([], null, a bare number or string) is just as much a
     // hand-edit gone wrong as invalid JSON is: normalizeConfig would otherwise turn it into
     // defaults with nobody told and nothing preserved (#554).
-    return await recoverFromUnreadableConfig(new Error("Config document is valid JSON but not an object."))
+    return await recoverFromUnreadableConfig(new Error("Config document is valid JSON but not an object."), "not-an-object")
   }
 
   const config = parsedDocument
@@ -323,8 +323,12 @@ async function loadConfigFromDisk(): Promise<ConfigType> {
  * not be preserved is never followed by overwriting the only other copy there was (see the
  * blocking review note on this: a failed preservation must not still lead to `saveConfig`).
  */
-async function recoverFromUnreadableConfig(err: unknown): Promise<ConfigType> {
-  logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be parsed. Preserving a copy and recovering.`)
+async function recoverFromUnreadableConfig(err: unknown, cause: ConfigRecoveryUnreadableCause = "invalid-json"): Promise<ConfigType> {
+  if (cause === "not-an-object") {
+    logMessage("error", `${LOG_PREFIX} [getConfig] Config is not an object. Preserving a copy and recovering.`)
+  } else {
+    logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be parsed. Preserving a copy and recovering.`)
+  }
   logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
 
   const copyName = await preserveUnreadableConfig()
@@ -334,7 +338,7 @@ async function recoverFromUnreadableConfig(err: unknown): Promise<ConfigType> {
   else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
 
   configCache = recoveredConfig
-  pendingConfigRecoveryNotice = { kind: "unreadable", restored, preserved: copyName !== null, copyName }
+  pendingConfigRecoveryNotice = { kind: "unreadable", restored, preserved: copyName !== null, copyName, cause }
 
   if (copyName !== null) {
     await saveConfig(recoveredConfig)
@@ -576,8 +580,9 @@ function stripLegacyAccountSecrets(document: unknown): boolean {
  *
  * One rolling backup, not one per migration: this is a local single-writer
  * desktop file, so "the config right before the last migration" is the useful
- * recovery point, not a full history. The first snapshot is the one that
- * survives; a later migration leaves it alone.
+ * recovery point, not a full history. The first usable snapshot is the one that
+ * survives; a later migration leaves it alone unless the existing backup is
+ * corrupt or unusable (#625).
  *
  * What it never keeps is the session key, signature and multiplayer token a
  * pre-#253 `config.json` carried in the clear. The migration moves those into
@@ -593,10 +598,22 @@ function stripLegacyAccountSecrets(document: unknown): boolean {
 async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
   const backupPath = getConfigBackupPath()
   try {
+    let existingUsable = false
     if (await fse.pathExists(backupPath)) {
-      const existing: unknown = await fse.readJSON(backupPath)
-      if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
-      return
+      try {
+        const existing: unknown = await fse.readJSON(backupPath)
+        if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
+        const migration = migrateConfigDocument(existing)
+        existingUsable = migration.outcome === "migrated" || migration.outcome === "already-current"
+        if (!existingUsable) {
+          logMessage("debug", `${LOG_PREFIX} [reconcileConfigBackup] Existing pre-migration backup is not a usable restore point: its migration ended as ${migration.outcome}.`)
+        }
+      } catch (err) {
+        logMessage("debug", `${LOG_PREFIX} [reconcileConfigBackup] Existing pre-migration backup could not be read: ${err}`)
+        existingUsable = false
+      }
+
+      if (existingUsable) return
     }
 
     if (!migrationRan) return

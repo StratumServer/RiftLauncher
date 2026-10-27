@@ -52,6 +52,74 @@ describe("config recovery notice (#554)", () => {
   })
 })
 
+describe("config not-an-object notice (#625)", () => {
+  it("shows the specific not-an-object sentence when config.json was valid JSON but not an object", async () => {
+    vi.resetModules()
+    const { NotificationsProvider: FreshProvider, useNotificationsContext: useFreshNotifications } = await import("@renderer/contexts/NotificationsContext")
+    let seen: NotificationType[] = []
+    function Probe(): null {
+      seen = useFreshNotifications().notifications
+      return null
+    }
+    const getConfigRecoveryNotice = vi.fn(
+      async () =>
+        ({
+          kind: "unreadable",
+          cause: "not-an-object",
+          restored: true,
+          preserved: true,
+          copyName: "config.unreadable-1727690000000.json"
+        }) as ConfigRecoveryNotice
+    )
+    installMockWindowApi({ configManager: { getConfigRecoveryNotice } })
+
+    render(
+      <FreshProvider>
+        <Probe />
+      </FreshProvider>
+    )
+
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]?.type).toBe("warning")
+    expect(seen[0]?.body).toContain("Your settings file is valid JSON but does not contain a settings object")
+    expect(seen[0]?.body).toContain("restore a settings object in config.unreadable-1727690000000.json")
+    expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows the not-an-object reset sentence when no backup could be restored", async () => {
+    vi.resetModules()
+    const { NotificationsProvider: FreshProvider, useNotificationsContext: useFreshNotifications } = await import("@renderer/contexts/NotificationsContext")
+    let seen: NotificationType[] = []
+    function Probe(): null {
+      seen = useFreshNotifications().notifications
+      return null
+    }
+    const getConfigRecoveryNotice = vi.fn(
+      async () =>
+        ({
+          kind: "unreadable",
+          cause: "not-an-object",
+          restored: false,
+          preserved: true,
+          copyName: "config.unreadable-1727690000000.json"
+        }) as ConfigRecoveryNotice
+    )
+    installMockWindowApi({ configManager: { getConfigRecoveryNotice } })
+
+    render(
+      <FreshProvider>
+        <Probe />
+      </FreshProvider>
+    )
+
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]?.type).toBe("warning")
+    expect(seen[0]?.body).toContain("defaults are being used")
+    expect(seen[0]?.body).toContain("restore a settings object in config.unreadable-1727690000000.json")
+    expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe("failed VS Launcher import notice (#708)", () => {
   it("tells the player once that the import failed and will be tried at the next start", async () => {
     // A copy of the provider of its own: the pulled notice is kept in a promise for the life of the module.
