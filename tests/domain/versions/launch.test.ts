@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { MESA_GL_THREAD_VARIABLE, buildGameLaunchPlan } from "../../../src/domain/versions/launch"
+import { DOTNET_DISABLE_GUI_ERRORS_VARIABLE, MESA_GL_THREAD_VARIABLE, buildGameLaunchPlan } from "../../../src/domain/versions/launch"
 import type { BuildGameLaunchPlanInput, GameLaunchPlan } from "../../../src/domain/versions/launch"
 import type { PathBuilder } from "../../../src/domain/ports"
 
@@ -188,6 +188,18 @@ describe("buildGameLaunchPlan environment", () => {
   it("never sets the Mesa GL thread variable on Windows", async () => {
     const plan = await planFor({ platform: "win32", fileNames: ["Vintagestory.exe"], mesaGlThread: true })
 
-    assert.deepEqual(plan.env, {})
+    assert.equal(plan.env[MESA_GL_THREAD_VARIABLE], undefined)
+  })
+
+  it("turns the .NET host's missing-runtime dialog off on Windows, and only there", async () => {
+    // Pinned against the literal for the same reason as the Mesa variable: the host reads exactly
+    // this name, and only the value 1.
+    assert.equal(DOTNET_DISABLE_GUI_ERRORS_VARIABLE, "DOTNET_DISABLE_GUI_ERRORS")
+
+    const windows = await planFor({ platform: "win32", fileNames: ["Vintagestory.exe"] })
+    const linux = await planFor({ mesaGlThread: true })
+
+    assert.deepEqual(windows.env, { [DOTNET_DISABLE_GUI_ERRORS_VARIABLE]: "1" })
+    assert.equal(linux.env[DOTNET_DISABLE_GUI_ERRORS_VARIABLE], undefined)
   })
 })

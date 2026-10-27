@@ -29,6 +29,9 @@
  *   `--dataPath`.
  * - {@link MESA_GL_THREAD_VARIABLE} is set for the native Linux launcher only.
  *   The mono fallback never got it, and neither did Windows.
+ *
+ * Windows gets {@link DOTNET_DISABLE_GUI_ERRORS_VARIABLE} instead, for a reason
+ * of its own given on the constant.
  */
 
 import type { PathBuilder } from "../ports"
@@ -47,6 +50,18 @@ import type { GameOs } from "./gameExecutable"
  * on older Mesa or for apps Mesa does not whitelist.
  */
 export const MESA_GL_THREAD_VARIABLE = "mesa_glthread"
+
+/**
+ * The variable that stops the .NET host from showing its missing-runtime dialog on Windows.
+ *
+ * Vintagestory.exe is a Windows GUI app, so when the .NET runtime its version needs is missing,
+ * the host opens a "You must install or update .NET" dialog and waits for an answer. The game is
+ * spawned with `windowsHide`, which hides that dialog as well: the process waits on a window
+ * nobody can see, the launch never ends, and the Installation's folder never gets more than the
+ * clientsettings.json the launcher wrote. With this set, the host prints the same sentence to
+ * stderr and exits, and the missing-runtime notice (#397) reads it there, as it does on Linux.
+ */
+export const DOTNET_DISABLE_GUI_ERRORS_VARIABLE = "DOTNET_DISABLE_GUI_ERRORS"
 
 /**
  * Why no command was built.
@@ -146,7 +161,7 @@ export async function buildGameLaunchPlan(ports: BuildGameLaunchPlanPorts, input
       command: wrapper && os === "linux" ? wrapper : gameCommand,
       args: wrapper && os === "linux" ? [gameCommand, ...gameCommandArgs] : gameCommandArgs,
       executablePath,
-      env: !runsUnderMono && os === "linux" && input.mesaGlThread ? { [MESA_GL_THREAD_VARIABLE]: "true" } : {},
+      env: os === "win32" ? { [DOTNET_DISABLE_GUI_ERRORS_VARIABLE]: "1" } : !runsUnderMono && os === "linux" && input.mesaGlThread ? { [MESA_GL_THREAD_VARIABLE]: "true" } : {},
       cwd: input.versionFolder
     }
   }
