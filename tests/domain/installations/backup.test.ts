@@ -391,6 +391,46 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
+  it("keeps older backups whose folder went missing when compression recreates the folder (#748)", async () => {
+    // When a Backups folder (e.g. on a removable drive) was missing and is recreated by
+    // compression, the older archive is unreachable rather than gone. Pruning must not drop it.
+    const outputFolder = "/backups/Installations/My-Install-Test"
+    const missingArchive = `${outputFolder}/b1.tar.gz`
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1", { path: missingArchive })] })
+
+    const missing = new Set([outputFolder, missingArchive])
+    const baseFs = fakeFileSystem()
+    const fileSystem: FileSystem = {
+      ...baseFs,
+      exists: async (path: string): Promise<boolean> => {
+        if (missing.has(path)) {
+          trace.push(`exists:${path}`)
+          return false
+        }
+        return baseFs.exists(path)
+      }
+    }
+
+    const archiver: Archiver = {
+      compress: async (request: CompressRequest, onComplete: (outcome: CompressOutcome) => void): Promise<void> => {
+        trace.push(`compress:${request.outputFolder}/${request.fileName}`)
+        // Simulating the archiver recreating the output folder
+        missing.delete(request.outputFolder)
+        onComplete({ ok: true })
+      }
+    }
+
+    const ports = fakePorts({ fileSystem, archiver })
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
+    )
+  })
+
   it("tells gone, unreachable and live records apart in one list", async () => {
     // b3 was deleted by hand from a folder that is still there. b2 and b6 sit on a drive that is not.
     // Only b3 comes off the list, and the three archives on disk (b1, b4, b5) are at the limit of three,
@@ -484,9 +524,9 @@ describe("makeInstallationBackup archiving", () => {
       "guard-acquire:Making and installation backup.",
       "started",
       "exists:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
+      "exists:/backups/b1.tar.gz",
       "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
       "created:generated-id-1",
-      "exists:/backups/b1.tar.gz",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
       "guard-release",
