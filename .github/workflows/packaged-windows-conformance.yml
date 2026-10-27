@@ -18,6 +18,12 @@ name: Packaged Windows install conformance
 # tests/e2e/packaged-windows-install.ts for the four preload calls it makes and
 # why each one is the one AddVersion.tsx makes.
 #
+# Once the install holds, the same run edits the installed game's
+# runtimeconfig.json to ask for a .NET runtime that cannot exist and launches it
+# through EXECUTE_GAME, which has to answer missing-dotnet instead of hanging
+# on the .NET host's hidden dialog (PR #787). It ends any Vintagestory.exe it
+# left running before the launcher is killed, so the job still finishes.
+#
 # Manual only for the same reason windows-conformance.yml is: the run downloads
 # and unpacks most of a gigabyte and leaves a launcher process running until
 # the script's finally block kills its process tree. Not wired into ci.yml and

@@ -52,6 +52,30 @@
  * records that it does not exist in 1.18.15 and older, so anything that ever
  * pins an older version through this script has to drop that assertion.
  *
+ * Once those hold, a last phase checks what a player sees when the VS Version
+ * needs a .NET runtime the PC does not have (NekoJess's Play button, stuck
+ * forever on Windows; PR #787). The .NET host reacts to a missing runtime by
+ * opening a "You must install or update .NET" dialog, and the game is spawned
+ * with windowsHide, so nobody can ever dismiss it and EXECUTE_GAME never
+ * resolves. #787 sets DOTNET_DISABLE_GUI_ERRORS=1 on the game's environment, which
+ * turns the dialog into a sentence on stderr and an exit with 0x80008096, and
+ * EXECUTE_GAME then answers `{ ok: false, reason: "missing-dotnet" }`. Only a
+ * real Windows host and the real game binary can show that, and it was proven by
+ * hand once before this phase made it repeatable:
+ *
+ * 5. The script rewrites <target>/Vintagestory.runtimeconfig.json so every
+ *    framework it asks for wants version 99.0.0 (missing-runtime.ts).
+ * 6. It registers that VS Version and a new Installation through
+ *    `configManager.getConfig` then `configManager.saveConfig`, the config the
+ *    renderer's Add VS Version and Add Installation flows end up saving, with the
+ *    Installation folder made by `pathsManager.ensurePathExists` under the
+ *    default installations folder so the path policy admits it, and no account.
+ * 7. It calls `gameManager.executeGame` and requires exactly the answer above. A
+ *    call that does not answer within its own bound is the failure this phase
+ *    exists to catch, and a run on a branch without #787 ends there.
+ * 8. Whatever happened, it kills every Vintagestory.exe before the launcher is
+ *    killed, so a hung host cannot keep the job from finishing.
+ *
  * The report is written after every phase, not just on a clean exit, for the
  * reason windows-install.ts's persistReport comment gives: a run killed by the
  * job ceiling must still leave evidence behind. The app's stdout and stderr
@@ -82,6 +106,7 @@ import { join, relative } from "node:path"
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, assertSafeFileName, isRecord, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
 import { buildInstallerTreeKillCommand, shouldKillInstallerTree } from "../../src/ipc/handlers/installerTimeoutOutcome"
 import { describeLauncherExit, explainSocketClose, readLauncherExit, readLogTails, type LauncherExit } from "./launcher-death"
+import { askForUnavailableRuntime, isMissingDotnetResult, UNAVAILABLE_FRAMEWORK_VERSION, type FrameworkChange } from "./missing-runtime"
 
 if (!process.env.CI) {
   console.error("Refusing to run outside CI: this launches the packaged launcher, downloads a full game version and unpacks it. Run it only through the packaged-windows-conformance workflow.")
@@ -121,6 +146,19 @@ const MAX_CAPTURED_OUTPUT_CHARS = 64 * 1024
 const LAUNCHER_EXIT_GRACE_MS = 5_000
 /** Lines kept from the end of each of the launcher's own log files when it dies. */
 const LOG_TAIL_LINES = 60
+/**
+ * How long EXECUTE_GAME gets to answer for a game that cannot find its .NET
+ * runtime. Nothing in the main process bounds that call, because a play session
+ * lasts as long as the player wants it to, so a launch that hangs on the host's
+ * hidden dialog never answers at all and only this script can notice. With
+ * DOTNET_DISABLE_GUI_ERRORS the host gives up in well under a second, so two
+ * minutes leaves room for a cold runner without coming near the job's ceiling.
+ */
+const MISSING_RUNTIME_LAUNCH_TIMEOUT_MS = 120_000
+/** How long the taskkill that ends every Vintagestory.exe may run before the run moves on. */
+const GAME_KILL_TIMEOUT_MS = 30_000
+/** The Installation folder the missing-runtime phase creates, under the default installations folder. */
+const MISSING_RUNTIME_INSTALLATION_FOLDER = "missing-runtime-check"
 
 type CatalogPlatformEntry = {
   filename: string
@@ -159,6 +197,23 @@ type AppProcess = {
   readStderr(): string
 }
 
+type MissingRuntimeReport = {
+  runtimeConfigPath: string
+  /** Every framework entry the rewrite changed, with the version it asked for before. */
+  frameworkChanges: FrameworkChange[]
+  gameVersionId: string
+  installationId: string
+  installationFolder: string | null
+  /** What EXECUTE_GAME resolved with, when it resolved. */
+  launchResult: unknown
+  /** The error EXECUTE_GAME rejected with, when it rejected. */
+  launchRejection: string | null
+  /** True when EXECUTE_GAME gave no answer within its bound: the hang this phase exists to catch. */
+  launchTimedOut: boolean
+  /** What the taskkill that ends every Vintagestory.exe reported. Exit code 128 means there was none left, the normal case. */
+  gameProcessCleanup: string | null
+}
+
 type Report = {
   phase: string
   exePath: string | null
@@ -181,6 +236,8 @@ type Report = {
   versionMarkerRelativePath: string | null
   versionMarkerLanded: boolean | null
   targetListing: string[] | null
+  /** Only once the install assertions held: the missing .NET runtime check. */
+  missingRuntime: MissingRuntimeReport | null
   durationsMs: Record<string, number>
   appStdout: string
   appStderr: string
@@ -547,6 +604,60 @@ const DOWNLOAD_SOURCE = `async (id, url, outputPath, fileName) => window.api.pat
 /** TaskManagerContext's startInstall. `true` for deleteInstaller is what createInstallPorts passes on a real install, so the run leaves the folder in the state a player's install leaves it. */
 const RUN_INSTALLER_SOURCE = `async (id, filePath, outputPath) => window.api.pathsManager.runInstaller(id, filePath, outputPath, true)`
 
+/**
+ * What AddInstallation.tsx does, as one page-side call: the folder is the default
+ * installations folder joined with a name (useInstallationFolder.ts, over the same
+ * FORMAT_PATH handler), created through ENSURE_PATH_EXISTS before the entry is
+ * added (a dangling entry is what that order prevents), and the entry joins the
+ * config the way the reducer's ADD_INSTALLATION and ADD_GAME_VERSION put it there,
+ * at the front. The VS Version goes in as the row useInstallVersion.ts leaves it
+ * once the install finished. No account is active, so EXECUTE_GAME never touches
+ * clientsettings.json. A refused save throws with its reason, so the run says why.
+ */
+const REGISTER_MISSING_RUNTIME_SOURCE = `async (gameVersion, installation, folderName) => {
+  const config = await window.api.configManager.getConfig()
+  const path = await window.api.pathsManager.formatPath([config.defaultInstallationsFolder, folderName])
+  if (!(await window.api.pathsManager.ensurePathExists(path))) throw new Error("ensurePathExists could not create " + path)
+  const saved = await window.api.configManager.saveConfig({
+    ...config,
+    activeAccountId: null,
+    gameVersions: [gameVersion, ...config.gameVersions],
+    installations: [{ ...installation, path }, ...config.installations]
+  })
+  if (!saved.ok) throw new Error("saveConfig refused the VS Version and the Installation: " + JSON.stringify(saved))
+  return path
+}`
+
+/**
+ * Runs the game the way runGame in the renderer's launch adapter does, with the
+ * two rows read back out of the saved config (so the launch is of what the
+ * launcher kept, not of what this script sent). The page races the call against
+ * its own timer, so a launch that never answers comes back as `timedOut` instead
+ * of as a failed DevTools command, and a rejection comes back as its message.
+ */
+const EXECUTE_GAME_SOURCE = `async (gameVersionId, installationId, timeoutMs) => {
+  const config = await window.api.configManager.getConfig()
+  const gameVersion = config.gameVersions.find((candidate) => candidate.id === gameVersionId)
+  const installation = config.installations.find((candidate) => candidate.id === installationId)
+  if (!gameVersion || !installation) return { registered: false }
+
+  let timer
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs)
+  })
+  const launched = window.api.gameManager.executeGame(gameVersion, installation).then(
+    (result) => ({ result }),
+    (error) => ({ rejected: String(error && error.message ? error.message : error) })
+  )
+  try {
+    return await Promise.race([launched, timedOut])
+  } finally {
+    clearTimeout(timer)
+  }
+}`
+
+type LaunchProbe = { registered?: false; timedOut?: true; rejected?: string; result?: unknown }
+
 async function waitForAppPage(app: AppProcess): Promise<{ url: string; webSocketDebuggerUrl: string }> {
   const deadline = Date.now() + APP_READY_TIMEOUT_MS
 
@@ -632,6 +743,103 @@ function safeListDir(root: string, maxDepth = 2): string[] {
   return results
 }
 
+/**
+ * Ends every Vintagestory.exe on the machine, and says what taskkill answered.
+ *
+ * Without the dialog suppression the host waits on a window nobody can see, so the
+ * process outlives the launch this script gave up on and would keep the job from
+ * finishing. The process may also simply be gone already (exit code 128), which is
+ * the normal case and not worth a failure. Never throws.
+ */
+function killGameProcesses(): string {
+  const killed = spawnSync("taskkill", ["/IM", "Vintagestory.exe", "/T", "/F"], { windowsHide: true, encoding: "utf8", timeout: GAME_KILL_TIMEOUT_MS })
+  if (killed.error) return `taskkill could not finish: ${killed.error.message}`
+  return `taskkill exited with code ${killed.status}: ${`${killed.stdout}${killed.stderr}`.replace(/\s+/g, " ").trim()}`
+}
+
+/**
+ * The missing .NET runtime phase (see the header). Returns the sentence that
+ * fails the run, or null when EXECUTE_GAME answered exactly `missing-dotnet`.
+ * Errors from the page or the disk are left to throw into main's catch, after the
+ * finally here has ended any game process the attempt left behind.
+ */
+async function checkMissingRuntime(cdp: CdpConnection, report: Report, targetFolder: string, version: string, persistReport: () => string): Promise<string | null> {
+  const runtimeConfigPath = join(targetFolder, "Vintagestory.runtimeconfig.json")
+  const detail: MissingRuntimeReport = {
+    runtimeConfigPath,
+    frameworkChanges: [],
+    gameVersionId: randomUUID(),
+    installationId: randomUUID(),
+    installationFolder: null,
+    launchResult: null,
+    launchRejection: null,
+    launchTimedOut: false,
+    gameProcessCleanup: null
+  }
+  report.missingRuntime = detail
+
+  try {
+    const rewritten = askForUnavailableRuntime(readFileSync(runtimeConfigPath, "utf8"))
+    writeFileSync(runtimeConfigPath, rewritten.text)
+    detail.frameworkChanges = rewritten.changes
+    persistReport()
+    console.log(`Rewrote ${runtimeConfigPath} so ${rewritten.changes.length} framework entries ask for ${UNAVAILABLE_FRAMEWORK_VERSION}.`)
+
+    const gameVersion: GameVersionType = { id: detail.gameVersionId, label: version, version, path: targetFolder }
+    const installation: InstallationType = {
+      id: detail.installationId,
+      name: "Missing runtime check",
+      icon: "basalt",
+      // Replaced by the page with the folder it builds and creates; the policy reads the config, not this value.
+      path: "",
+      version,
+      gameVersionId: gameVersion.id,
+      startParams: "",
+      backupsLimit: 3,
+      backupsAuto: false,
+      compressionLevel: 6,
+      backups: [],
+      worldBackups: [],
+      lastTimePlayed: -1,
+      totalTimePlayed: 0,
+      mesaGlThread: false,
+      envVars: "",
+      _modsCount: 0
+    }
+    detail.installationFolder = await evaluateInPage<string>(cdp, REGISTER_MISSING_RUNTIME_SOURCE, [gameVersion, installation, MISSING_RUNTIME_INSTALLATION_FOLDER], CDP_CALL_TIMEOUT_MS)
+    persistReport()
+    console.log(`Registered VS Version ${version} and an Installation at ${detail.installationFolder}.`)
+
+    console.log("Launching it through the packaged app's own EXECUTE_GAME, expecting the missing .NET runtime to be reported...")
+    const launchStartedAt = Date.now()
+    // The page's own timer fires first; the extra CDP_CALL_TIMEOUT_MS only keeps a wedged DevTools socket from outliving it.
+    const probe = await evaluateInPage<LaunchProbe>(
+      cdp,
+      EXECUTE_GAME_SOURCE,
+      [detail.gameVersionId, detail.installationId, MISSING_RUNTIME_LAUNCH_TIMEOUT_MS],
+      MISSING_RUNTIME_LAUNCH_TIMEOUT_MS + CDP_CALL_TIMEOUT_MS
+    )
+    report.durationsMs.missingRuntimeLaunch = Date.now() - launchStartedAt
+
+    if (probe.registered === false) return "The saved config does not hold the VS Version and the Installation this phase registered, so EXECUTE_GAME was never asked."
+    if (probe.timedOut) {
+      detail.launchTimedOut = true
+      return `The launch never resolved: the .NET host is waiting on its hidden missing-runtime dialog (EXECUTE_GAME gave no answer within ${MISSING_RUNTIME_LAUNCH_TIMEOUT_MS}ms).`
+    }
+    if (probe.rejected !== undefined) {
+      detail.launchRejection = probe.rejected
+      return `EXECUTE_GAME rejected instead of answering: ${probe.rejected}`
+    }
+
+    detail.launchResult = probe.result
+    if (!isMissingDotnetResult(probe.result)) return `EXECUTE_GAME answered ${JSON.stringify(probe.result)} where a missing .NET runtime should answer { ok: false, reason: "missing-dotnet" }.`
+    return null
+  } finally {
+    detail.gameProcessCleanup = killGameProcesses()
+    persistReport()
+  }
+}
+
 function writeReport(report: Report, workDir: string): string {
   const reportDir = join(workDir, "report")
   mkdirSync(reportDir, { recursive: true })
@@ -663,6 +871,7 @@ async function main(): Promise<void> {
     versionMarkerRelativePath: null,
     versionMarkerLanded: null,
     targetListing: null,
+    missingRuntime: null,
     durationsMs: {},
     appStdout: "",
     appStderr: "",
@@ -775,7 +984,7 @@ async function main(): Promise<void> {
     // A folder this run did not find before launching has to be reported as new, or as a VS Launcher copy.
     const profileChoiceOk = userDataExistedBeforeLaunch || (userDataSetup !== null && !userDataSetup.includes("Using the existing RiftLauncher user data folder"))
     report.failed = !installOk || !executableLanded || !versionMarkerLanded || !profileChoiceOk
-    report.verdict = !profileChoiceOk
+    const installVerdict = !profileChoiceOk
       ? `The launcher treated a user data folder that did not exist before it started as an existing profile (${userDataSetup ?? "no setup line in info.log"}). Something wrote there before the folder was chosen, which skips the VS Launcher migration for a first-time player.`
       : !installOk
         ? `RUN_INSTALLER refused the install through the packaged app (${isRecord(installResult) && typeof installResult.reason === "string" ? installResult.reason : "no reason on the wire"}).`
@@ -784,6 +993,21 @@ async function main(): Promise<void> {
           : !versionMarkerLanded
             ? `RUN_INSTALLER reported ok but ${versionMarkerRelativePath} did not land.`
             : `The packaged app downloaded and unpacked ${version} through its own IPC: worker spawning, asar path resolution and the path policy all hold once electron-builder has packed the app.`
+    report.verdict = installVerdict
+
+    // Only on top of an install that held: the phase rewrites the files that install just proved.
+    if (!report.failed) {
+      report.phase = "missing-runtime"
+      persistReport()
+
+      const missingRuntimeFailure = await checkMissingRuntime(cdp, report, targetFolder, version, persistReport)
+      if (missingRuntimeFailure) {
+        report.failed = true
+        report.verdict = missingRuntimeFailure
+      } else {
+        report.verdict = `${installVerdict} A version asking for a .NET runtime this machine lacks is answered missing-dotnet instead of hanging the launch.`
+      }
+    }
 
     report.phase = report.failed ? "failed" : "done"
     cdp.close()
