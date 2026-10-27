@@ -373,9 +373,10 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS, async (event, pathV
   return fse.pathExists(safePath)
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, pathValue: string): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, pathValue: string): Promise<EnsurePathExistsResult> => {
   assertTrustedIpcSender(event)
 
+  let safePath: string
   try {
     // Reporting a folder the user linked in as present is a read (#237), so
     // that arm takes allowSymlinks. Creating one is not, so the missing case
@@ -386,16 +387,26 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
     // directory still answers true, and a plain file falls through to ensureDir,
     // which throws EEXIST and lands on false: the AddInstallation guard relies
     // on that to keep an installation entry off a regular file.
-    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
+    safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
+  } catch {
+    logMessage("info", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Refused: unauthorized path.`)
+    return { ok: false, reason: "unauthorized-path" }
+  }
+
+  try {
     const existing = await fse.stat(safePath).catch(() => null)
-    if (existing?.isDirectory()) return true
+    if (existing?.isDirectory()) return { ok: true }
 
     await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
-    return true
+    return { ok: true }
   } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes("Symbolic links are not allowed"))) {
+      logMessage("info", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Refused: unauthorized path.`)
+      return { ok: false, reason: "unauthorized-path" }
+    }
     logMessage("error", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Error ensuring path.`)
     logMessage("debug", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
-    return false
+    return { ok: false, reason: "failed" }
   }
 })
 

@@ -101,8 +101,13 @@ function AddInslallation(): JSX.Element {
       // path) must block the add, not just log a rejection nobody catches. Adding the
       // Installation to the list before the folder exists would leave a dangling entry
       // with no data behind it.
-      if (!(await ensurePathExists(path))) {
-        addNotification(t("notifications.body.installationFolderCreateFailed"), "error")
+      const folderCreated = await ensurePathExists(path)
+      if (!folderCreated.ok) {
+        if (folderCreated.reason === "unauthorized-path") {
+          addNotification(t("features.installations.pickFolderAgain"), "error")
+        } else {
+          addNotification(t("notifications.body.installationFolderCreateFailed"), "error")
+        }
         return
       }
 

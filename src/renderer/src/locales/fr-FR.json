@@ -199,6 +199,7 @@
       "installationNameMinMaxCharacters": "Le nom de l'installation doit contenir entre {{min}} et {{max}} caractères !",
       "defaultName": "Ma nouvelle installation",
       "folderAlreadyInUse": "Ce dossier est déjà utilisé !",
+      "pickFolderAgain": "RiftLauncher ne fait confiance à un dossier que pendant les dix minutes qui suivent son choix, et ce délai est dépassé. Choisissez à nouveau le dossier avec le bouton Parcourir, puis ajoutez-le.",
       "folderNestedWithAnother": "Ce dossier est à l'intérieur ou autour d'une autre installation, d'une version de VS ou du dossier de sauvegardes, ou il est ou contient le dossier des installations ou des versions de VS. Restaurer ou supprimer l'un effacerait l'autre. Choisissez un dossier séparé.",
       "installationSuccessfullyAdded": "Installation ajoutée avec succès.",
       "errorAddingInstallation": "L'installation n'a pas pu être ajoutée. Les détails sont dans le journal.",

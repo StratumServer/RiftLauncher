@@ -617,7 +617,7 @@ const RUN_INSTALLER_SOURCE = `async (id, filePath, outputPath) => window.api.pat
 const REGISTER_MISSING_RUNTIME_SOURCE = `async (gameVersion, installation, folderName) => {
   const config = await window.api.configManager.getConfig()
   const path = await window.api.pathsManager.formatPath([config.defaultInstallationsFolder, folderName])
-  if (!(await window.api.pathsManager.ensurePathExists(path))) throw new Error("ensurePathExists could not create " + path)
+  if (!(await window.api.pathsManager.ensurePathExists(path)).ok) throw new Error("ensurePathExists could not create " + path)
   const saved = await window.api.configManager.saveConfig({
     ...config,
     activeAccountId: null,
