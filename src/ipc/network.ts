@@ -203,7 +203,14 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
       collectBounded(response, maxBytes, chunks, () => request.abort(), finish, resetInactivity)
     })
 
-    request.on("error", (error) => finish(error))
+    request.on("error", (error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes("net::ERR_TIMED_OUT") || message.includes("net::ERR_CONNECTION_TIMED_OUT")) {
+        finish(new Error("Network request timed out", { cause: error }))
+      } else {
+        finish(error)
+      }
+    })
     request.on("login", (_authInfo, callback) => callback())
 
     request.setHeader("Accept", options.accept ?? DEFAULT_ACCEPT_HEADER)

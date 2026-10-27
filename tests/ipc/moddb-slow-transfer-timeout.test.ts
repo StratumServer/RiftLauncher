@@ -97,6 +97,25 @@ function respondWithTrickle(chunkBodies: string[], gapMs: number, stallAfterChun
   mockState.requestHandler = (): FakeRequest => new FakeRequest(chunkBodies, gapMs, stallAfterChunks, responseDelayMs)
 }
 
+class FailingRequest extends EventEmitter {
+  constructor(private readonly error: Error) {
+    super()
+  }
+  setHeader(): void {
+    // no-op: headers are irrelevant to this failure test
+  }
+  abort(): void {
+    // no-op: aborted state is unneeded for immediate connect failure
+  }
+  end(): void {
+    setTimeout(() => this.emit("error", this.error), 0)
+  }
+}
+
+function failWithError(error: Error): void {
+  mockState.requestHandler = (): FakeRequest => new FailingRequest(error) as unknown as FakeRequest
+}
+
 const AUTHORS_URL = "https://mods.vintagestory.at/api/authors"
 const TAGS_URL = "https://mods.vintagestory.at/api/tags"
 
@@ -192,5 +211,38 @@ describe("the mods/authors catalog survives a slow, steady transfer (pre-release
     await vi.advanceTimersByTimeAsync(16_000)
 
     await assert.rejects(pending, /timed out/)
+  })
+
+  it("maps Chromium net::ERR_TIMED_OUT to Network request timed out (#750)", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+    failWithError(new Error("net::ERR_TIMED_OUT"))
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+
+    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out")
+  })
+
+  it("maps Chromium net::ERR_CONNECTION_TIMED_OUT to Network request timed out (#750)", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+    failWithError(new Error("net::ERR_CONNECTION_TIMED_OUT"))
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+
+    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out")
+  })
+
+  it("preserves quick failures like net::ERR_CONNECTION_REFUSED unchanged (#750)", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+    failWithError(new Error("net::ERR_CONNECTION_REFUSED"))
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+
+    await assert.rejects(pending, (err: Error) => err.message === "net::ERR_CONNECTION_REFUSED")
   })
 })
