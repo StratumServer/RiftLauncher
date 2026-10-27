@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { CONFIG_ACTIONS, useConfigDispatch, useInstallations, useSettingsConfig, useNotifiedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { recordStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
 function GlobalModUpdateChecker(): null {
   const { t } = useTranslation()
@@ -17,6 +18,7 @@ function GlobalModUpdateChecker(): null {
   const getCompleteInstalledMods = useGetCompleteInstalledMods()
 
   useEffect(() => {
+    let timeoutId: number | undefined
     const lastUsedInstallation = lastUsedInstallationId ? installations.find((installation) => installation.id === lastUsedInstallationId) : undefined
     if (!lastUsedInstallation) return
 
@@ -28,7 +30,7 @@ function GlobalModUpdateChecker(): null {
           if (failedLookups === 0) {
             configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
           }
-          window.setTimeout(() => {
+          timeoutId = window.setTimeout(() => {
             if (updates === 0) {
               addNotification(t("features.mods.updatesCheckFailedSome"), "info")
               return
@@ -43,12 +45,19 @@ function GlobalModUpdateChecker(): null {
                     void goTo(`/installations/mods/${lastUsedInstallation.id}`)
                   }
                 }
-              ]
+              ],
+              onCreated: (noticeId) => {
+                recordStartupModUpdateNotice(lastUsedInstallation.id, noticeId)
+              }
             })
           }, 2_000)
         }
       }
     })
+
+    return (): void => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+    }
   }, [lastUsedInstallationId])
 
   return null

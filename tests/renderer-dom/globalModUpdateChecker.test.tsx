@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
-import { act, screen } from "@testing-library/react"
+import { act, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import GlobalModUpdateChecker from "@renderer/components/layout/GlobalModUpdateChecker"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { getStartupModUpdateNotice, resetStartupModUpdateNoticesForTesting, resolveStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -54,8 +56,14 @@ function SwitchInstallation(): JSX.Element {
   )
 }
 
+function ResolveNoticeButton({ installationId }: { installationId: string }): JSX.Element {
+  const { resolveNotification } = useNotificationsContext()
+  return <button onClick={() => resolveStartupModUpdateNotice(installationId, resolveNotification)}>resolve notice</button>
+}
+
 describe("GlobalModUpdateChecker", () => {
   beforeEach(() => {
+    resetStartupModUpdateNoticesForTesting()
     getCompleteInstalledMods.mockReset()
     getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number, failedLookups: number) => void }) => {
       onFinish?.(2, 0)
@@ -160,5 +168,29 @@ describe("GlobalModUpdateChecker", () => {
     expect(await screen.findByText(/Some installed Mods could not be checked for updates\./i, {}, { timeout: 4_000 })).toBeTruthy()
     expect(screen.queryByRole("button", { name: /View updates/i })).toBeNull()
     expect(screen.queryByText(/with updates available/i)).toBeNull()
+  }, 10_000)
+
+  it("records the startup notice id and dismisses it when resolved (#752)", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] }))
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <GlobalModUpdateChecker />
+        <NotificationsOverlay />
+        <ResolveNoticeButton installationId="install-a" />
+      </>
+    )
+
+    await screen.findByText(/Mods with updates available/i, {}, { timeout: 4_000 })
+    expect(getStartupModUpdateNotice("install-a")).toBeDefined()
+
+    await user.click(screen.getByRole("button", { name: "resolve notice" }))
+    await waitFor(() => expect(screen.queryByText(/Mods with updates available/i)).toBeNull())
+    expect(getStartupModUpdateNotice("install-a")).toBeUndefined()
   }, 10_000)
 })
