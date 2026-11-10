@@ -331,6 +331,9 @@ describe("startup update notice and cached refreshes (#800 with #752)", () => {
     await user.click(within(rowOf("Mod 3")).getByTitle(DISABLE))
     await waitFor(() => expect(shows("Mod 3", ENABLE)).toBe(true))
     await screen.findByTitle("Reload")
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    })
 
     expect(m.q).toHaveBeenCalledTimes(lookups)
     expect(screen.getByText(notice)).toBeTruthy()
@@ -346,6 +349,9 @@ describe("startup update notice and cached refreshes (#800 with #752)", () => {
     await user.click(within(rowOf("Mod 2")).getByTitle(DISABLE))
     await waitFor(() => expect(shows("Mod 2", ENABLE)).toBe(true))
     await screen.findByTitle("Reload")
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    })
 
     expect(m.q).toHaveBeenCalledTimes(lookups)
     expect(screen.getByText(notice)).toBeTruthy()
@@ -364,6 +370,25 @@ describe("startup update notice and cached refreshes (#800 with #752)", () => {
     await waitFor(() => expect(screen.queryByText(notice)).toBeNull())
     // The scan after the update read its answers from the cache: no lookup for any of the three Mods.
     expect(m.q.mock.calls.slice(lookups).filter(([u]) => u.endsWith("m2") || u.endsWith("m3"))).toHaveLength(0)
+  })
+
+  it("updating the only updatable Mod while another lookup failed does not resolve the notice", async () => {
+    const user = userEvent.setup()
+    const m = mountWithNotice((url) => (url.endsWith("m2") ? Promise.reject(new Error("offline")) : Promise.resolve(detail(url, true))))
+    await screen.findByText(notice, {}, { timeout: 4_000 })
+    await screen.findByTitle("Reload")
+    const lookups = m.q.mock.calls.length
+
+    await user.click(within(rowOf("Mod 1")).getByTitle(UPDATE))
+    await user.click(within(await screen.findByRole("dialog")).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
+    await waitFor(() => expect(m.updated.has("m1")).toBe(true))
+    await screen.findByTitle("Reload")
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    })
+
+    expect(m.q.mock.calls.slice(lookups).filter(([u]) => u.endsWith("m2") || u.endsWith("m3"))).toHaveLength(0)
+    expect(screen.getByText(notice)).toBeTruthy()
   })
 
   it("a full scan overtaken by a toggle does not resolve the notice on its older read", async () => {
