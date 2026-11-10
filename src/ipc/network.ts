@@ -205,8 +205,9 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
 
     request.on("error", (error) => {
       const message = error instanceof Error ? error.message : String(error)
+      // Chromium connection timeouts must stop queued ModDB lookups just like our timers.
       if (message.includes("net::ERR_TIMED_OUT") || message.includes("net::ERR_CONNECTION_TIMED_OUT")) {
-        finish(new Error("Network request timed out", { cause: error }))
+        finish(new Error(`Network request timed out (${message})`, { cause: error }))
       } else {
         finish(error)
       }

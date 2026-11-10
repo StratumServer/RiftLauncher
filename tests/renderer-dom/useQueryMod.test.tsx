@@ -98,8 +98,8 @@ describe("useQueryMod", () => {
   })
 
   it.each([
-    ["net::ERR_TIMED_OUT", "Error invoking remote method 'query-url': Error: net::ERR_TIMED_OUT"],
-    ["net::ERR_CONNECTION_TIMED_OUT", "Error invoking remote method 'query-url': Error: net::ERR_CONNECTION_TIMED_OUT"]
+    ["net::ERR_TIMED_OUT", "Error invoking remote method 'query-url': Error: Network request timed out (net::ERR_TIMED_OUT)"],
+    ["net::ERR_CONNECTION_TIMED_OUT", "Error invoking remote method 'query-url': Error: Network request timed out (net::ERR_CONNECTION_TIMED_OUT)"]
   ])("flags timeout when transport fails with Chromium connect timeout (%s, issue #750)", async (_code, errorMessage) => {
     const queryURL = vi.fn(async () => {
       throw new Error(errorMessage)

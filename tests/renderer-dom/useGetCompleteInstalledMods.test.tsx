@@ -160,8 +160,8 @@ describe("useGetCompleteInstalledMods: the update count", () => {
   })
 
   it.each([
-    ["net::ERR_TIMED_OUT", "Error invoking remote method 'query-url': Error: net::ERR_TIMED_OUT"],
-    ["net::ERR_CONNECTION_TIMED_OUT", "Error invoking remote method 'query-url': Error: net::ERR_CONNECTION_TIMED_OUT"]
+    ["net::ERR_TIMED_OUT", "Error invoking remote method 'query-url': Error: Network request timed out (net::ERR_TIMED_OUT)"],
+    ["net::ERR_CONNECTION_TIMED_OUT", "Error invoking remote method 'query-url': Error: Network request timed out (net::ERR_CONNECTION_TIMED_OUT)"]
   ])("stops queued lookups when ModDB hangs at connect (%s, #750)", async (_code, errorMessage) => {
     const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
     let rejectFirst!: (error: Error) => void

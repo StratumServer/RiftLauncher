@@ -221,7 +221,7 @@ describe("the mods/authors catalog survives a slow, steady transfer (pre-release
     pending.catch(() => {})
     await vi.advanceTimersByTimeAsync(10)
 
-    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out")
+    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out (net::ERR_TIMED_OUT)")
   })
 
   it("maps Chromium net::ERR_CONNECTION_TIMED_OUT to Network request timed out (#750)", async () => {
@@ -232,7 +232,7 @@ describe("the mods/authors catalog survives a slow, steady transfer (pre-release
     pending.catch(() => {})
     await vi.advanceTimersByTimeAsync(10)
 
-    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out")
+    await assert.rejects(pending, (err: Error) => err.message === "Network request timed out (net::ERR_CONNECTION_TIMED_OUT)")
   })
 
   it("preserves quick failures like net::ERR_CONNECTION_REFUSED unchanged (#750)", async () => {

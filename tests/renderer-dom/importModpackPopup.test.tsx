@@ -418,7 +418,7 @@ describe("ImportModpackPopup, after a ModDB request times out", () => {
     )
 
     await waitFor(() => expect(queryURL).toHaveBeenCalledTimes(4))
-    requests[0]!.reject(new Error("Error invoking remote method 'query-url': Error: net::ERR_TIMED_OUT"))
+    requests[0]!.reject(new Error("Error invoking remote method 'query-url': Error: Network request timed out (net::ERR_TIMED_OUT)"))
     await waitFor(() => expect(modDetailLookups.queuedCount).toBe(0))
     expect(queryURL).toHaveBeenCalledTimes(4)
 
