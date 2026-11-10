@@ -82,7 +82,7 @@ function ManageInstallationWorlds(): JSX.Element {
     if (!installation || isPlaying) return false
     const result = await window.api.worldsManager.backup(installation.id, world.name)
     if (!result.ok) {
-      addNotification(t(`features.worlds.error.${result.reason}`), "error")
+      addNotification(t(result.reason === "backup-folder-unavailable" ? "features.backups.backupFolderUnavailable" : `features.worlds.error.${result.reason}`), "error")
       return false
     }
     const deletedSet = new Set(result.deletedBackupIds ?? [])

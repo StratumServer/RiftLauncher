@@ -705,6 +705,7 @@
       "backupFailedSkipLaunch": "The backup failed. Launch without a backup this time?",
       "launchAnyway": "Launch anyway",
       "installationPathMissing": "No backup made: this Installation has no data yet. Play it once to generate the data first.",
+      "backupFolderUnavailable": "The backup folder is missing. Restore the folder, reconnect the drive, or remove the backups listed from that folder before trying again.",
       "noBackupsFolder": "No backup made: you haven't set a Backups folder. Set one on the Config page.",
       "backupsDisabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",
       "compressNoFreeSpace": "No backup made: the drive holding the Backups folder does not have enough free space for this Installation.",

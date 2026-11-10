@@ -736,6 +736,7 @@
       "backupFailedSkipLaunch": "La sauvegarde a échoué. Lancer sans sauvegarde cette fois-ci ?",
       "launchAnyway": "Lancer quand même",
       "installationPathMissing": "Aucune sauvegarde faite : cette installation n'a pas encore de données. Jouez-y une fois pour les générer.",
+      "backupFolderUnavailable": "Le dossier des sauvegardes est introuvable. Rétablissez le dossier, reconnectez le disque ou supprimez de la liste les sauvegardes de ce dossier avant de réessayer.",
       "noBackupsFolder": "Aucune sauvegarde faite : vous n'avez pas défini de dossier des sauvegardes. Choisissez-en un sur la page Configuration.",
       "backupsDisabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
       "compressNoFreeSpace": "Aucune sauvegarde faite : le disque qui contient le dossier des sauvegardes n'a pas assez d'espace libre pour cette installation.",

@@ -55,6 +55,8 @@ export function describeBackupFailure(reason: MakeInstallationBackupFailure, det
       return { messageKey: "features.backups.backupWhilePlaying", logLine: null }
     case "restore-in-progress":
       return { messageKey: "features.backups.restoreInProgress", logLine: null }
+    case "backup-folder-unavailable":
+      return { messageKey: "features.backups.backupFolderUnavailable", logLine: "Error creating backup: backup-folder-unavailable" }
     case "compress-failed":
       return { messageKey: compressFailureNotificationKey(detail), logLine: `Error creating backup: compress-failed${detail ? `. ${detail}` : ""}` }
     case "installation-path-missing":

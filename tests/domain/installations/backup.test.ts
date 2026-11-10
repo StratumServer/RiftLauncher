@@ -391,43 +391,25 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
-  it("keeps older backups whose folder went missing when compression recreates the folder (#748)", async () => {
-    // When a Backups folder (e.g. on a removable drive) was missing and is recreated by
-    // compression, the older archive is unreachable rather than gone. Pruning must not drop it.
+  it("refuses consecutive backups rather than recreating a missing folder with recorded archives (#748)", async () => {
     const outputFolder = "/backups/Installations/My-Install-Test"
     const missingArchive = `${outputFolder}/b1.tar.gz`
-    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1", { path: missingArchive })] })
-
-    const missing = new Set([outputFolder, missingArchive])
-    const baseFs = fakeFileSystem()
-    const fileSystem: FileSystem = {
-      ...baseFs,
-      exists: async (path: string): Promise<boolean> => {
-        if (missing.has(path)) {
-          trace.push(`exists:${path}`)
-          return false
-        }
-        return baseFs.exists(path)
-      }
-    }
-
-    const archiver: Archiver = {
-      compress: async (request: CompressRequest, onComplete: (outcome: CompressOutcome) => void): Promise<void> => {
-        trace.push(`compress:${request.outputFolder}/${request.fileName}`)
-        // Simulating the archiver recreating the output folder
-        missing.delete(request.outputFolder)
-        onComplete({ ok: true })
-      }
-    }
-
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b1", { path: missingArchive })] })
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ missing: [outputFolder, missingArchive] })
     const ports = fakePorts({ fileSystem, archiver })
-    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
-    assert.equal(result.ok, true)
-    assert.deepEqual(result.deletedBackupIds, [])
-    assert.deepEqual(
-      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
-      []
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.deepEqual(await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents()), {
+        ok: false,
+        reason: "backup-folder-unavailable",
+        deletedBackupIds: []
+      })
+    }
+    assert.deepEqual(requests, [])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      false
     )
   })
 
@@ -524,9 +506,9 @@ describe("makeInstallationBackup archiving", () => {
       "guard-acquire:Making and installation backup.",
       "started",
       "exists:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
-      "exists:/backups/b1.tar.gz",
       "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
       "created:generated-id-1",
+      "exists:/backups/b1.tar.gz",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
       "guard-release",
@@ -575,7 +557,10 @@ describe("makeInstallationBackup archiving", () => {
     const taken = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"
     const { archiver, requests } = fakeArchiver()
 
-    const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }), backupsFolder: "/backups" })
+    const result = await makeInstallationBackup(fakePorts({ archiver, fileSystem: fakeFileSystem({ present: ["/backups/Installations/My-Install-Test"] }) }), {
+      installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }),
+      backupsFolder: "/backups"
+    })
 
     assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
     assert.equal(result.ok && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
