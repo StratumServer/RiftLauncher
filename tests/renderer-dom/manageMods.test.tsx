@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest"
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
+import GlobalModUpdateChecker from "@renderer/components/layout/GlobalModUpdateChecker"
+import { resetStartupModUpdateNoticesForTests } from "@renderer/features/mods/modUpdateNotices"
+
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
 import { mountManageMods } from "./helpers/mountManageMods"
 
@@ -2474,4 +2477,65 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(lines.filter((line) => line.includes("/games/a") || line.includes("Alpha Mod") || line.includes("Beta Mod"))).toEqual([])
     expect(logMessage.mock.calls.filter(([level, text]) => level === "info" && text.includes("Batch disable: 1 changed, 1 failed (name-taken 1, refused 0)."))).toHaveLength(1)
   })
+})
+
+describe("startup update notices on Manage Mods (#752)", () => {
+  it.each(["all", "filtered", "row", "offline"] as const)(
+    "handles the %s scan after the startup notice",
+    async (scenario) => {
+      resetStartupModUpdateNoticesForTests()
+      const user = userEvent.setup()
+      const updated = new Set<string>()
+      let offline = false
+      const getInstalledMods = vi.fn(async () => ({
+        mods: aModScan()
+          .mods.filter((mod) => mod.modid === "alpha" || (mod.modid === "beta" && scenario !== "row"))
+          .map((mod) => ({
+            ...mod,
+            version: updated.has(mod.modid) ? (mod.modid === "alpha" ? "1.1.0" : "2.1.0") : mod.version
+          })),
+        errors: []
+      }))
+      const queryURL = vi.fn(async (url: string) => {
+        if (offline) throw new Error("ModDB offline")
+        return queryModDb(url)
+      })
+      const downloadOnPath = vi.fn(async (_id: string, url: string) => {
+        const mod = url.includes("beta") ? "beta" : "alpha"
+        updated.add(mod)
+        return `/games/a/Mods/${mod}-updated.zip`
+      })
+      installMockWindowApi({
+        configManager: { getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] })) },
+        modsManager: { getInstalledMods },
+        netManager: { queryURL },
+        pathsManager: { deletePath: vi.fn(async () => true), downloadOnPath }
+      })
+      mountManageMods(undefined, <GlobalModUpdateChecker />)
+
+      const notice = /Mod(?:s with updates| with an update) available/i
+      await screen.findByText(notice, {}, { timeout: 4_000 })
+      const scansBefore = getInstalledMods.mock.calls.length
+      if (scenario === "offline") {
+        offline = true
+        await user.click(screen.getByTitle("Reload"))
+      } else if (scenario === "row") {
+        await user.click(within((await screen.findByText("Alpha Mod")).closest("li") as HTMLElement).getByTitle("Update"))
+        await user.click(within(await screen.findByRole("dialog")).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
+      } else {
+        if (scenario === "filtered") await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "alpha")
+        await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+      }
+
+      await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+      await screen.findByTitle("Reload")
+      if (scenario === "all" || scenario === "row") {
+        await waitFor(() => expect(screen.queryByText(notice)).toBeNull())
+      } else {
+        expect(screen.getByText(notice)).toBeTruthy()
+      }
+      expect(downloadOnPath).toHaveBeenCalledTimes(scenario === "all" ? 2 : scenario === "offline" ? 0 : 1)
+    },
+    12_000
+  )
 })

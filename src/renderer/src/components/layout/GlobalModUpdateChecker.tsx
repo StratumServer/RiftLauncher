@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { CONFIG_ACTIONS, useConfigDispatch, useInstallations, useSettingsConfig, useNotifiedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { recordStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
 function GlobalModUpdateChecker(): null {
   const { t } = useTranslation()
@@ -43,7 +44,10 @@ function GlobalModUpdateChecker(): null {
                     void goTo(`/installations/mods/${lastUsedInstallation.id}`)
                   }
                 }
-              ]
+              ],
+              onCreated: (noticeId) => {
+                recordStartupModUpdateNotice(lastUsedInstallation.id, noticeId)
+              }
             })
           }, 2_000)
         }

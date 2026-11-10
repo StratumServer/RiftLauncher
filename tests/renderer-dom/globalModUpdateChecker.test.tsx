@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event"
 import GlobalModUpdateChecker from "@renderer/components/layout/GlobalModUpdateChecker"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { resetStartupModUpdateNoticesForTests } from "@renderer/features/mods/modUpdateNotices"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -56,6 +57,7 @@ function SwitchInstallation(): JSX.Element {
 
 describe("GlobalModUpdateChecker", () => {
   beforeEach(() => {
+    resetStartupModUpdateNoticesForTests()
     getCompleteInstalledMods.mockReset()
     getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number, failedLookups: number) => void }) => {
       onFinish?.(2, 0)

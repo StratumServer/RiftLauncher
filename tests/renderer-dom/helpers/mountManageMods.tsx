@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Route, Routes } from "react-router-dom"
 
 import ManageMods from "@renderer/features/installations/pages/ManageMods"
@@ -16,13 +17,14 @@ import { renderWithProviders } from "./render"
  * (a scan, a ModDB response, a bridge mock to hand back) that folding them in here would hide more
  * than it shares.
  */
-export function mountManageMods(route = "/installations/mods/install-a"): ReturnType<typeof renderWithProviders> {
+export function mountManageMods(route = "/installations/mods/install-a", beforePage?: ReactNode): ReturnType<typeof renderWithProviders> {
   return renderWithProviders(
     <Routes>
       <Route
         path="/installations/mods/:id"
         element={
           <TaskProvider>
+            {beforePage}
             <ManageMods />
             <NotificationsOverlay />
           </TaskProvider>

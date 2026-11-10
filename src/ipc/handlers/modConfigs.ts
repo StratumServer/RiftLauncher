@@ -727,6 +727,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         return
       }
 
+      // Check the destination folder again before inspecting the entry. It may have changed
+      // since the pre-pass (#626), and the recovery copy needs its own check below.
+      await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
+
       const existing = await fse.lstat(entry.destination).catch(() => undefined)
       if (!existing) {
         kinds.set(entry.key, "new")
@@ -762,6 +766,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         return
       }
       await fse.ensureDir(dirname(backupPath))
+      await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
       try {
         // The option pair `preserveUnreadableStore` uses (src/ipc/accountStore.ts): overwrite is
         // off, so an existing destination is left as it is instead of being clobbered.
@@ -783,6 +788,13 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
         failed.push({ name: entry.key, reason: "copy-failed" })
         refused.add(entry.key)
+      }
+      if (refused.has(entry.key)) return
+      try {
+        await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
+      } catch (error) {
+        await fse.remove(backupPath)
+        throw error
       }
     }
 
