@@ -368,34 +368,51 @@ describe("Manage Mods: the mod config export picker", () => {
     })
   })
 
-  it("opens the picker on a folder past the pack entry ceiling, shows the total count, starts unticked, and exports the chosen subset (#590)", async () => {
-    const manyConfigs: ModConfigListingEntry[] = Array.from({ length: 2_001 }, (_, index) => ({
-      name: `c${index}.json`,
-      bytes: 12
+  it("past the pack entry ceiling, shows the total count, starts unticked, greys out the remaining box once the pack is full, and exports the chosen subset (#590)", async () => {
+    // The ceiling is the pack's 2000 entries shared by mods, servers and configs. Filling it with mods
+    // and listing a few configs more than the room left tests the same rule as listing 2001 configs,
+    // without making jsdom render and re-render 2001 rows on every click.
+    const mods: InstalledModType[] = Array.from({ length: 1_997 }, (_, index) => ({
+      name: `Mod ${index}`,
+      modid: `mod${index}`,
+      version: "1.0.0",
+      path: `/games/a/Mods/mod${index}-1.0.0.zip`,
+      enabled: true,
+      authors: ["Ann"],
+      contributors: []
     }))
-    const { exportModpack } = mountWithConfigs(manyConfigs)
+    const manyConfigs: ModConfigListingEntry[] = Array.from({ length: 4 }, (_, index) => ({ name: `c${index}.json`, bytes: 12 }))
+    const exportModpack = vi.fn(async () => ({ success: true, path: "/out/pack.json" }))
+    installMockWindowApi({
+      modsManager: {
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: manyConfigs, linked: [] })),
+        exportModpack
+      }
+    })
+    renderWithProviders(<ExportModConfigsDialog open installation={anInstallation()} installedMods={mods} includeServers={false} close={vi.fn()} />)
 
-    await askForConfigs()
-    await openThePicker()
-
-    expect(screen.getByText("This Installation has 2001 files in its ModConfig folder.")).toBeTruthy()
+    // 1997 mods leave room for 3 of the 4 valid configs.
+    expect(await screen.findByText("This Installation has 4 files in its ModConfig folder.", {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.getByText("No mod config files are selected to travel in this modpack.")).toBeTruthy()
     const applyButton = (await screen.findByText("Export the chosen configs", {}, { timeout: 3000 })).closest("button") as HTMLButtonElement
     expect(applyButton.disabled).toBe(true)
 
-    const firstBox = await rowFor("c0.json")
-    const lastBox = await rowFor("c2000.json")
-    expect(firstBox.checked).toBe(false)
-    expect(lastBox.checked).toBe(false)
+    const first = await rowFor("c0.json")
+    const second = await rowFor("c1.json")
+    const third = await rowFor("c2.json")
+    const fourth = await rowFor("c3.json")
+    expect([first, second, third, fourth].map((box) => box.checked)).toEqual([false, false, false, false])
 
     const user = userEvent.setup()
-    await user.click(firstBox)
-    await user.click(lastBox)
-    expect(screen.getByText("This modpack will carry 2 mod config files from this Installation. Untick the ones it should not carry.")).toBeTruthy()
+    await user.click(first)
+    await user.click(fourth)
+    await user.click(second)
+    expect(screen.getByText("This modpack will carry 3 mod config files from this Installation. Untick the ones it should not carry.")).toBeTruthy()
+    expect(third.disabled).toBe(true)
     expect(applyButton.disabled).toBe(false)
 
     await user.click(applyButton)
-    expect(exportModpack).toHaveBeenCalledWith(expect.objectContaining({}), "/games/a", true, ["c0.json", "c2000.json"])
+    expect(exportModpack).toHaveBeenCalledWith(expect.objectContaining({}), "/games/a", true, ["c0.json", "c3.json", "c1.json"])
   })
 
   it("caps how many configs can be ticked in the picker to the remaining pack capacity (#590)", async () => {
