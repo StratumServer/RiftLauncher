@@ -3,13 +3,17 @@ import { beforeEach, describe, it } from "vitest"
 
 import { deleteInstallation } from "../../../src/domain/installations/delete"
 import type { DeleteInstallationEvents, DeleteInstallationPorts, InstallationDeleteSnapshot } from "../../../src/domain/installations/delete"
+import type { InstallationLease, InstallationLeaseOutcome } from "../../../src/domain/ports"
 
 type BackupFixture = InstallationDeleteSnapshot["backups"][number]
 
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
-function fakePorts(options: { removals?: Record<string, boolean>; missing?: readonly string[] } = {}): DeleteInstallationPorts {
+/** A lease that always grants and says nothing; the tests that care about it pass their own. */
+const grantedLease: InstallationLease = { acquire: async (): Promise<InstallationLeaseOutcome> => ({ ok: true, release: (): void => {} }) }
+
+function fakePorts(options: { removals?: Record<string, boolean>; missing?: readonly string[]; installationLease?: InstallationLease } = {}): DeleteInstallationPorts {
   const removals = options.removals ?? {}
   const missing = new Set(options.missing ?? [])
   return {
@@ -20,7 +24,8 @@ function fakePorts(options: { removals?: Record<string, boolean>; missing?: read
         if (missing.has(path)) return false
         return removals[path] ?? true
       }
-    }
+    },
+    installationLease: options.installationLease ?? grantedLease
   }
 }
 
@@ -30,12 +35,28 @@ function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boo
 
 function snapshot(overrides: Partial<InstallationDeleteSnapshot> = {}): InstallationDeleteSnapshot {
   return {
+    id: "my-install",
     path: "/installations/my-install",
     backups: [],
     isPlaying: false,
     isBackingUp: false,
     isRestoringBackup: false,
     ...overrides
+  }
+}
+
+function recordingLease(answer: InstallationLeaseOutcome | "grant" = "grant"): InstallationLease {
+  return {
+    acquire: async (installationId: string): Promise<InstallationLeaseOutcome> => {
+      trace.push(`lease-acquire:${installationId}`)
+      if (answer !== "grant") return answer
+      return {
+        ok: true,
+        release: (): void => {
+          trace.push("lease-release")
+        }
+      }
+    }
   }
 }
 
@@ -206,5 +227,62 @@ describe("deleteInstallation with data deletion", () => {
 
     assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
     assert.deepEqual(trace, ["remove:/installations/my-install", "data-deleted"])
+  })
+})
+
+describe("deleteInstallation host reservation", () => {
+  it("holds the installation on the host from before removing its folder until after backup cleanup", async () => {
+    const installation = snapshot({ backups: [backup("b1")] })
+    const result = await deleteInstallation(fakePorts({ installationLease: recordingLease() }), { installation, deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(trace, ["lease-acquire:my-install", "remove:/installations/my-install", "data-deleted", "remove:/backups/b1.zip", "backup-deleted:/backups/b1.zip", "lease-release"])
+  })
+
+  it("gives the installation back when the folder removal fails", async () => {
+    const installation = snapshot({ backups: [backup("b1")] })
+    const ports = fakePorts({ removals: { "/installations/my-install": false }, installationLease: recordingLease() })
+
+    const result = await deleteInstallation(ports, { installation, deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "data-delete-failed" })
+    assert.deepEqual(trace, ["lease-acquire:my-install", "remove:/installations/my-install", "lease-release"])
+  })
+
+  it("gives the installation back when the filesystem remove throws an exception", async () => {
+    const ports: DeleteInstallationPorts = {
+      fileSystem: {
+        exists: async () => true,
+        remove: async () => {
+          trace.push("remove-throw")
+          throw new Error("disk exploded")
+        }
+      },
+      installationLease: recordingLease()
+    }
+
+    await assert.rejects(async () => deleteInstallation(ports, { installation: snapshot(), deleteData: true }), /disk exploded/)
+    assert.equal(trace.at(-1), "lease-release")
+  })
+
+  it("refuses before touching the folder when a world operation holds the installation", async () => {
+    const result = await deleteInstallation(fakePorts({ installationLease: recordingLease({ ok: false, reason: "busy" }) }), { installation: snapshot(), deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "installation-busy" })
+    assert.deepEqual(trace, ["lease-acquire:my-install"])
+  })
+
+  it("refuses when the host says a game is running on the installation", async () => {
+    const result = await deleteInstallation(fakePorts({ installationLease: recordingLease({ ok: false, reason: "playing" }) }), { installation: snapshot(), deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "installation-playing" })
+    assert.deepEqual(trace, ["lease-acquire:my-install"])
+  })
+
+  it("does not acquire the lease when deleteData is false", async () => {
+    const result = await deleteInstallation(fakePorts({ installationLease: recordingLease() }), { installation: snapshot({ backups: [backup("b1")] }), deleteData: false }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(trace, [])
   })
 })

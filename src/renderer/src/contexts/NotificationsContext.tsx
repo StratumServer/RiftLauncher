@@ -18,6 +18,8 @@ export interface NotificationAction {
 }
 
 export interface NotificationOptions {
+  /** Optional callback invoked with the notification record id. */
+  onCreated?: (id: string) => void
   /** Milliseconds before an unhandled toast closes; null keeps it open. */
   duration?: number | null
   actions?: NotificationAction[]
@@ -82,6 +84,7 @@ interface NotificationsContextType {
   setPausedToasts: (ids: readonly string[]) => void
   addNotification: (body: string, type: NotificationTypes, options?: NotificationOptions) => void
   dismissToast: (id: string, reason?: ToastDismissReason) => void
+  resolveNotification: (id: string, resolvedWith?: string) => void
   invokeAction: (notificationId: string, actionId: string) => void
   markAllSeen: () => void
   markAllRead: () => void
@@ -102,6 +105,7 @@ const defaultValue: NotificationsContextType = {
   setPausedToasts: () => {},
   addNotification: () => {},
   dismissToast: () => {},
+  resolveNotification: () => {},
   invokeAction: () => {},
   markAllSeen: () => {},
   markAllRead: () => {},
@@ -416,6 +420,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         // toast budget; the count would then land on nothing. Left as is: it
         // takes a burst of eight identical-plus-different messages in one tick.
         setRecords((previous) => previous.map((record) => (record.id === repeated ? { ...record, repeats: record.repeats + 1, createdAt: Date.now() } : record)))
+        options?.onCreated?.(repeated)
         return
       }
     }
@@ -437,8 +442,21 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       pendingToasts.current.push({ id, body, type, hasActions })
       setToastQueue((queue) => [...queue, id])
     }
+    options?.onCreated?.(id)
   }, [])
   addNotificationRef.current = addNotification
+
+  const resolveNotification = useCallback((id: string, resolvedWith?: string): void => {
+    setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))
+    setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
+    setRecords((previous) =>
+      previous.flatMap((record) => {
+        if (record.id !== id) return [record]
+        if (isToastOnly(record)) return []
+        return [{ ...record, seen: true, read: true, resolved: true, ...(resolvedWith !== undefined ? { resolvedWith } : {}) }]
+      })
+    )
+  }, [])
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))
@@ -521,6 +539,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         setPausedToasts,
         addNotification,
         dismissToast,
+        resolveNotification,
         invokeAction,
         markAllSeen,
         markAllRead,

@@ -71,7 +71,7 @@ declare global {
       movePath: (fromPath: string, toPath: string) => Promise<boolean>
       checkPathEmpty: (path: string) => Promise<boolean>
       checkPathExists: (path: string) => Promise<boolean>
-      ensurePathExists: (path: string) => Promise<boolean>
+      ensurePathExists: (path: string) => Promise<EnsurePathExistsResult>
       openPathOnFileExplorer: (path: string) => Promise<void>
       downloadOnPath: (id: string, url: string, outputPath: string, fileName: string) => Promise<string>
       extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder?: boolean) => Promise<boolean>

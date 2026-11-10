@@ -106,8 +106,9 @@ export function useBulkUpdateMods(installation: InstallationType | undefined): B
       const failed = unchanged.length - bothVersions
       const updated = collected.length - unchanged.length
 
-      if (failed === 0 && bothVersions === 0) addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
-      else if (updated === 0 && failed > 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
+      if (failed === 0 && bothVersions === 0) {
+        addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
+      } else if (updated === 0 && failed > 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
       else if (failed > 0) addNotification(t("features.mods.modsPartiallyUpdated", { updated, failed }), "warning")
 
       if (bothVersions > 0) addNotification(t("features.mods.modsLeftWithBothVersions", { count: bothVersions }), "error")
