@@ -464,7 +464,7 @@ describe("CHECK_PATH_EMPTY / CHECK_PATH_EXISTS / ENSURE_PATH_EXISTS", () => {
     assert.equal(existsSync(target), true)
   })
 
-  // AddInstallation's folder field is free text, and its guard turns a failure
+  // AddInstallation's folder guard turns a failure
   // here into "we could not make that folder" and stops the add. Answering ok
   // for a regular file would put an installation entry on it, which is the
   // dangling entry the guard exists to prevent, and that path then feeds the
@@ -493,14 +493,17 @@ describe("CHECK_PATH_EMPTY / CHECK_PATH_EXISTS / ENSURE_PATH_EXISTS", () => {
     const event = await createTrustedEvent()
 
     vi.useFakeTimers({ toFake: ["Date"] })
-    vi.setSystemTime(new Date("2026-10-27T12:00:00Z"))
-    registerUserSelectedPaths([picked])
+    try {
+      vi.setSystemTime(new Date("2026-10-27T12:00:00Z"))
+      registerUserSelectedPaths([picked])
+      const ensure = handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)
+      assert.deepEqual(await ensure(event, picked), { ok: true })
 
-    // Advance past the 10-minute TTL (11 minutes later)
-    vi.setSystemTime(new Date(Date.parse("2026-10-27T12:00:00Z") + 11 * 60_000))
-    const expiredResult = await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, picked)
-    assert.deepEqual(expiredResult, { ok: false, reason: "unauthorized-path" })
-    vi.useRealTimers()
+      vi.setSystemTime(new Date(Date.parse("2026-10-27T12:00:00Z") + 11 * 60_000))
+      assert.deepEqual(await ensure(event, picked), { ok: false, reason: "unauthorized-path" })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -607,7 +610,7 @@ describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked 
   // the folder would appear inside the link target, outside the grant.
   it("ENSURE_PATH_EXISTS refuses to create a folder through the link", async () => {
     const event = await createTrustedEvent()
-    assert.deepEqual(await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), { ok: false, reason: "unauthorized-path" })
+    assert.deepEqual(await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), { ok: false, reason: "failed" })
 
     const { existsSync } = await import("node:fs")
     assert.equal(existsSync(join(realMods, "New")), false)

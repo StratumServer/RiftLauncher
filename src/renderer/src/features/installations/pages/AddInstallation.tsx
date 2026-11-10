@@ -104,7 +104,7 @@ function AddInslallation(): JSX.Element {
       const folderCreated = await ensurePathExists(path)
       if (!folderCreated.ok) {
         if (folderCreated.reason === "unauthorized-path") {
-          addNotification(t("features.installations.pickFolderAgain"), "error")
+          addNotification(t("features.versions.pickFolderAgain"), "error")
         } else {
           addNotification(t("notifications.body.installationFolderCreateFailed"), "error")
         }

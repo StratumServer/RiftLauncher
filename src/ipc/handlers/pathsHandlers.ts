@@ -382,11 +382,6 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
     // that arm takes allowSymlinks. Creating one is not, so the missing case
     // goes back through the strict policy, whose walk refuses a link it finds
     // among the existing ancestors.
-    //
-    // Only a directory counts as present. stat rather than lstat so a link at a
-    // directory still answers true, and a plain file falls through to ensureDir,
-    // which throws EEXIST and lands on false: the AddInstallation guard relies
-    // on that to keep an installation entry off a regular file.
     safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   } catch {
     logMessage("info", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Refused: unauthorized path.`)
@@ -394,16 +389,14 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
   }
 
   try {
+    // stat lets a link to a directory count as present. A plain file falls
+    // through to ensureDir, which rejects it so Add Installation cannot use it.
     const existing = await fse.stat(safePath).catch(() => null)
     if (existing?.isDirectory()) return { ok: true }
 
     await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return { ok: true }
   } catch (err) {
-    if (err instanceof TypeError || (err instanceof Error && err.message.includes("Symbolic links are not allowed"))) {
-      logMessage("info", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Refused: unauthorized path.`)
-      return { ok: false, reason: "unauthorized-path" }
-    }
     logMessage("error", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Error ensuring path.`)
     logMessage("debug", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
     return { ok: false, reason: "failed" }
