@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { mountManageMods } from "./helpers/mountManageMods"
+import GlobalModUpdateChecker from "@renderer/components/layout/GlobalModUpdateChecker"
+import { resetStartupModUpdateNoticesForTests } from "@renderer/features/mods/modUpdateNotices"
 
 // #800: enabling, disabling or deleting one Mod re-reads the folder and reuses what the last full
 // scan learned from the ModDB, so a toggle never waits on the network.
@@ -271,5 +273,123 @@ describe("Manage Mods actions and the network (#800)", () => {
 
     await waitFor(() => expect(shows("Mod 1", ENABLE)).toBe(true))
     expect(m.q).toHaveBeenCalledTimes(N + N + 1)
+  })
+})
+
+// #752 x #800: the startup notice is resolved only by a complete scan that finds no update, and a
+// refresh that reuses cached answers must count those answers exactly as a fresh lookup would.
+describe("startup update notice and cached refreshes (#800 with #752)", () => {
+  const pending: Array<() => void> = []
+  afterEach(() => pending.splice(0).forEach((release) => release()))
+  const notice = /Mods? with (?:an )?updates? available/i
+  const UPDATE = "Update"
+
+  function mountWithNotice(queryURL: (url: string) => Promise<string>): { q: ReturnType<typeof vi.fn<(url: string) => Promise<string>>>; updated: Set<string> } {
+    resetStartupModUpdateNoticesForTests()
+    const enabled = new Map<string, boolean>()
+    const updated = new Set<string>()
+    const q = vi.fn(queryURL)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] })) },
+      netManager: { queryURL: q },
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: Array.from({ length: N }, (_, i) => {
+            const id = `m${i + 1}`
+            const version = id === "m1" && updated.has(id) ? "1.1.0" : "1.0.0"
+            const path = `/games/a/Mods/${id}-${version}.zip`
+            return { name: `Mod ${i + 1}`, modid: id, version, path, enabled: enabled.get(path) ?? true, authors: [], contributors: [] }
+          }),
+          errors: []
+        })),
+        cacheModImage: vi.fn(async () => undefined),
+        setModEnabled: vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string, on: boolean) => {
+          enabled.set(path, on)
+          return { ok: true, path }
+        })
+      },
+      pathsManager: {
+        deletePath: vi.fn(async () => true),
+        downloadOnPath: vi.fn(async () => {
+          updated.add("m1")
+          return "/games/a/Mods/m1-1.1.0.zip"
+        })
+      }
+    })
+    mountManageMods(undefined, <GlobalModUpdateChecker />)
+    return { q, updated }
+  }
+
+  it("a toggle after a scan with failed lookups does not resolve the notice", async () => {
+    const user = userEvent.setup()
+    const m = mountWithNotice((url) => (url.endsWith("m2") ? Promise.reject(new Error("offline")) : Promise.resolve(detail(url, true))))
+    await screen.findByText(notice, {}, { timeout: 4_000 })
+    await screen.findByTitle("Reload")
+    await waitFor(() => expect(m.q.mock.calls.filter(([u]) => u.endsWith("m3")).length).toBeGreaterThan(0))
+    const lookups = m.q.mock.calls.length
+
+    await user.click(within(rowOf("Mod 3")).getByTitle(DISABLE))
+    await waitFor(() => expect(shows("Mod 3", ENABLE)).toBe(true))
+    await screen.findByTitle("Reload")
+
+    expect(m.q).toHaveBeenCalledTimes(lookups)
+    expect(screen.getByText(notice)).toBeTruthy()
+  })
+
+  it("a toggle of another Mod while an update is still available does not resolve the notice", async () => {
+    const user = userEvent.setup()
+    const m = mountWithNotice(async (url) => detail(url, true))
+    await screen.findByText(notice, {}, { timeout: 4_000 })
+    await screen.findByTitle("Reload")
+    const lookups = m.q.mock.calls.length
+
+    await user.click(within(rowOf("Mod 2")).getByTitle(DISABLE))
+    await waitFor(() => expect(shows("Mod 2", ENABLE)).toBe(true))
+    await screen.findByTitle("Reload")
+
+    expect(m.q).toHaveBeenCalledTimes(lookups)
+    expect(screen.getByText(notice)).toBeTruthy()
+  })
+
+  it("updating the last updatable Mod from its row resolves the notice from cached answers", async () => {
+    const user = userEvent.setup()
+    const m = mountWithNotice(async (url) => detail(url, true))
+    await screen.findByText(notice, {}, { timeout: 4_000 })
+    await screen.findByTitle("Reload")
+    const lookups = m.q.mock.calls.length
+
+    await user.click(within(rowOf("Mod 1")).getByTitle(UPDATE))
+    await user.click(within(await screen.findByRole("dialog")).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
+
+    await waitFor(() => expect(screen.queryByText(notice)).toBeNull())
+    // The scan after the update read its answers from the cache: no lookup for any of the three Mods.
+    expect(m.q.mock.calls.slice(lookups).filter(([u]) => u.endsWith("m2") || u.endsWith("m3"))).toHaveLength(0)
+  })
+
+  it("a full scan overtaken by a toggle does not resolve the notice on its older read", async () => {
+    const user = userEvent.setup()
+    let hold = false
+    let newer = true
+    const m = mountWithNotice((url) => (hold ? new Promise((resolve) => pending.push(() => resolve(detail(url, newer)))) : Promise.resolve(detail(url, newer))))
+    await screen.findByText(notice, {}, { timeout: 4_000 })
+    await screen.findByTitle("Reload")
+    hold = true
+    newer = false
+
+    // The Reload's answers carry no update, but its scan is superseded by the toggle's.
+    await user.click(screen.getByTitle("Reload"))
+    await waitFor(() => expect(pending.length).toBe(2))
+    await user.click(within(rowOf("Mod 2")).getByTitle(DISABLE))
+    await waitFor(() => expect(shows("Mod 2", ENABLE)).toBe(true))
+    await waitFor(() => {
+      pending.splice(0).forEach((release) => release())
+      expect(m.q.mock.calls.length).toBeGreaterThanOrEqual(N * 3)
+    })
+    await waitFor(() => expect(screen.getByTitle("Reload")).toBeTruthy())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    })
+
+    expect(screen.getByText(notice)).toBeTruthy()
   })
 })
