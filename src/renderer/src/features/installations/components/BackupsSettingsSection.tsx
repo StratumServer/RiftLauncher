@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next"
 
+import { MAX_BACKUPS_LIMIT, MIN_BACKUPS_LIMIT } from "@domain/installations/create"
+
 import { FormBody, FormHead, FormLabel, FromGroup, FormFieldDescription, FormFieldGroupWithDescription, FormGroupWrapper, FormInputNumber, FormToggle } from "@renderer/components/ui/FormComponents"
 
 export interface BackupsSettingsSectionProps {
@@ -31,8 +33,15 @@ export function BackupsSettingsSection({
 
         <FormBody>
           <FormFieldGroupWithDescription>
-            <FormInputNumber placeholder={t("features.backups.backupsLimit")} value={backupsLimit} onChange={(e) => onBackupsLimitChange(Number(e.target.value))} min={0} max={10} className="w-full" />
-            <FormFieldDescription content={t("generic.minMaxAmmount", { min: 0, max: 10 })} />
+            <FormInputNumber
+              placeholder={t("features.backups.backupsLimit")}
+              value={backupsLimit}
+              onChange={(e) => onBackupsLimitChange(Number(e.target.value))}
+              min={MIN_BACKUPS_LIMIT}
+              max={MAX_BACKUPS_LIMIT}
+              className="w-full"
+            />
+            <FormFieldDescription content={t("generic.minMaxAmmount", { min: MIN_BACKUPS_LIMIT, max: MAX_BACKUPS_LIMIT })} />
           </FormFieldGroupWithDescription>
         </FormBody>
       </FromGroup>

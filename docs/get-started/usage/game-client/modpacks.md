@@ -22,7 +22,7 @@ Everything here happens on the **Manage Mods** page of an Installation, under th
 
 Mods write their settings into the `ModConfig` folder of the Installation. With **Include mod configs** ticked, the export first opens **Mod configs to export**, a list of every file in that folder.
 
-Every file starts ticked. Untick the ones the pack should not carry, then choose **Export the chosen configs**, or **Export without configs** to leave them all out.
+When every file fits in the pack, they all start ticked: untick the ones the pack should not carry. A pack holds 2,000 entries, Mods and servers included, so a bigger folder starts with nothing ticked, and you tick the files you want until the pack is full. Then choose **Export the chosen configs**, or **Export without configs** to leave them all out.
 
 {% hint style="warning" %}
 A mod config can hold server addresses, API keys and tokens. Anyone you hand the pack to can read every file you leave ticked, so look at what a file holds before you share it.
@@ -56,6 +56,6 @@ Choose **Write the chosen configs**, or **Write none of them** to skip them all.
 
 Before it replaces one of your files, RiftLauncher saves a copy under your Backups folder, in `Settings`, then a folder named after the Installation, then a dated `settings_` folder. An `applied.txt` file in it lists what was written. A file that was already identical to the pack's is left alone and not copied.
 
-To undo a replacement, copy your file from that folder back into the Installation's `ModConfig` folder. RiftLauncher keeps as many of these folders per Installation as the Installation's **Backups max amount** and deletes the oldest.
+To undo a replacement, copy your file from that folder back into the Installation's `ModConfig` folder. RiftLauncher keeps as many of these folders per Installation as the Installation's **Backups max amount**, and at least one even when it is 0, and deletes the oldest.
 
 Because of that copy, an Installation needs a Backups folder before a pack can write its configs. The configs are also not written while that Installation is playing: close the game first.
