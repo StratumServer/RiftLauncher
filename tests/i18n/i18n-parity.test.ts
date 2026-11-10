@@ -50,6 +50,13 @@ function markers(value: unknown): string[] {
 }
 
 /**
+ * Keys whose en-US sentence moved to new placeholders while the other locales still hold the old
+ * sentence (#753). The hook keeps passing the old values, so that sentence renders unchanged until
+ * translators add the new plural families. Drop an entry once every locale has moved on.
+ */
+const LEGACY_PLACEHOLDERS: Record<string, string> = { "features.mods.modsPartiallyUpdated": "{{failed}}|{{updated}}" }
+
+/**
  * Every string in the locale files of `dir` whose placeholders or component tags differ from the
  * en-US string it translates, as `file: key (...)`. A folder, not the launcher's own, so the checks
  * below can be shown on files made for the purpose.
@@ -69,6 +76,7 @@ function placeholderMismatchesIn(dir: string): string[] {
       const shared = Object.keys(enUS)
         .filter((key) => key in locale && locale[key] !== "")
         .filter((key) => markers(enUS[key]).join("|") !== markers(locale[key]).join("|"))
+        .filter((key) => markers(locale[key]).join("|") !== LEGACY_PLACEHOLDERS[key])
         .map((key) => `${file}: ${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`)
 
       const ownGrammar = Object.keys(locale)

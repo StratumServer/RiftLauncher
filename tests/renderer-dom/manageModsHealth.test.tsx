@@ -332,7 +332,7 @@ describe("ManageMods: the Installation check", () => {
 
     await user.click(within(body).getByRole("button", { name: "Update these" }))
 
-    expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("1 Mod updated, 1 left as it was. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
 
     // Both attempts are in the summary, the failed one with no target version, and Alpha's new
     // archive is not rolled back over one Mod that did not make it.
