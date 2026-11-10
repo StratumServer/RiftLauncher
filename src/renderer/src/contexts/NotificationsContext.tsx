@@ -18,9 +18,7 @@ export interface NotificationAction {
 }
 
 export interface NotificationOptions {
-  /** Optional caller-assigned id for this notice (#752), used to programmatically resolve it later. */
-  id?: string
-  /** Optional callback invoked with the assigned or generated record id. */
+  /** Optional callback invoked with the notification record id. */
   onCreated?: (id: string) => void
   /** Milliseconds before an unhandled toast closes; null keeps it open. */
   duration?: number | null
@@ -427,7 +425,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       }
     }
 
-    const id = options?.id ?? crypto.randomUUID()
+    const id = crypto.randomUUID()
     const record: NotificationType = {
       id,
       body,

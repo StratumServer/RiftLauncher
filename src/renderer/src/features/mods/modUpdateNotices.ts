@@ -1,33 +1,25 @@
 /**
- * Keeps track of active startup mod update notice IDs per Installation.
- *
- * GlobalModUpdateChecker posts a notice when an Installation has available mod updates on startup.
- * When an update (either bulk or individual) leaves no updatable mods in that Installation,
- * the active notice is resolved and dismissed (#752) so the banner and actionable Activity Center
- * entry do not stay around showing obsolete update counts.
+ * Tracks startup update notices until a complete Manage Mods scan finds no updates (#752).
+ * Updates from the ModDB catalog are reflected when the player next opens Manage Mods.
  */
-const startupModUpdateNotices = new Map<string, string>()
+const startupModUpdateNotices = new Map<string, Set<string>>()
 
 export function recordStartupModUpdateNotice(installationId: string, noticeId: string): void {
-  startupModUpdateNotices.set(installationId, noticeId)
+  let ids = startupModUpdateNotices.get(installationId)
+  if (!ids) {
+    ids = new Set()
+    startupModUpdateNotices.set(installationId, ids)
+  }
+  ids.add(noticeId)
 }
 
-export function getStartupModUpdateNotice(installationId: string): string | undefined {
-  return startupModUpdateNotices.get(installationId)
-}
-
-export function clearStartupModUpdateNotice(installationId: string): void {
+export function resolveStartupModUpdateNotice(installationId: string, resolveNotification: (id: string) => void): void {
+  const ids = startupModUpdateNotices.get(installationId)
+  if (!ids) return
   startupModUpdateNotices.delete(installationId)
+  for (const id of ids) resolveNotification(id)
 }
 
-export function resolveStartupModUpdateNotice(installationId: string, resolveNotification: (id: string) => void): boolean {
-  const noticeId = startupModUpdateNotices.get(installationId)
-  if (!noticeId) return false
-  resolveNotification(noticeId)
-  startupModUpdateNotices.delete(installationId)
-  return true
-}
-
-export function resetStartupModUpdateNoticesForTesting(): void {
+export function resetStartupModUpdateNoticesForTests(): void {
   startupModUpdateNotices.clear()
 }

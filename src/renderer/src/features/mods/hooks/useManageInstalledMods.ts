@@ -53,15 +53,13 @@ export function useManageInstalledMods(installation: InstallationType | undefine
 
     const mods = await getCompleteInstalledMods({
       path: installation.path,
-      version: installation.version
+      version: installation.version,
+      onFinish: (updates, failedLookups) => {
+        if (updates === 0 && failedLookups === 0) resolveStartupModUpdateNotice(installation.id, resolveNotification)
+      }
     })
 
     syncModsCount(installation.id, mods)
-
-    const updatableCount = mods.mods.filter((m) => Boolean(m._updatableTo)).length
-    if (updatableCount === 0) {
-      resolveStartupModUpdateNotice(installation.id, resolveNotification)
-    }
 
     setInstalledMods(mods.mods)
     setModsWithErrors(mods.errors)

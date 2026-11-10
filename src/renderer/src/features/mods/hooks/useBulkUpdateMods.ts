@@ -6,7 +6,6 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
-import { resolveStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useBulkUpdateMods.ts]"
 
@@ -34,7 +33,7 @@ export interface BulkUpdateMods {
  */
 export function useBulkUpdateMods(installation: InstallationType | undefined): BulkUpdateMods {
   const { t } = useTranslation()
-  const { addNotification, resolveNotification } = useNotificationsContext()
+  const { addNotification } = useNotificationsContext()
   const configDispatch = useConfigDispatch()
   const suspendedModUpdates = useSuspendedModUpdates()
 
@@ -109,10 +108,6 @@ export function useBulkUpdateMods(installation: InstallationType | undefined): B
 
       if (failed === 0 && bothVersions === 0) {
         addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
-        const remainingUpdatable = mods.filter((m) => m._updatableTo && !collected.some((c) => c.modid === m.modid && c.toVersion !== null))
-        if (remainingUpdatable.length === 0) {
-          resolveStartupModUpdateNotice(installation.id, resolveNotification)
-        }
       } else if (updated === 0 && failed > 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
       else if (failed > 0) addNotification(t("features.mods.modsPartiallyUpdated", { updated, failed }), "warning")
 

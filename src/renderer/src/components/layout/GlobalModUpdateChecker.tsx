@@ -18,7 +18,6 @@ function GlobalModUpdateChecker(): null {
   const getCompleteInstalledMods = useGetCompleteInstalledMods()
 
   useEffect(() => {
-    let timeoutId: number | undefined
     const lastUsedInstallation = lastUsedInstallationId ? installations.find((installation) => installation.id === lastUsedInstallationId) : undefined
     if (!lastUsedInstallation) return
 
@@ -30,7 +29,7 @@ function GlobalModUpdateChecker(): null {
           if (failedLookups === 0) {
             configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
           }
-          timeoutId = window.setTimeout(() => {
+          window.setTimeout(() => {
             if (updates === 0) {
               addNotification(t("features.mods.updatesCheckFailedSome"), "info")
               return
@@ -54,10 +53,6 @@ function GlobalModUpdateChecker(): null {
         }
       }
     })
-
-    return (): void => {
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
-    }
   }, [lastUsedInstallationId])
 
   return null
