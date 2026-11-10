@@ -711,7 +711,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
 
     // Step 7's first half: decide, per file, whether anything is going to be displaced at all.
     const applyOneConfigEntry = async (entry: PendingConfig): Promise<void> => {
-      // Already refused above: skip rather than re-examine keys the pre-pass rejected.
+      // Already refused above, and skipped rather than re-examined: the `lstat`, the `readFile` and
+      // the `copy` below are the three calls that must not run on a path the pre-pass rejected. A
+      // key refused there is one whose destination is behind a link, so reading it reads somebody
+      // else's file and copying it puts a copy of that file in the recovery folder.
       if (refused.has(entry.key)) return
 
       // The digest is a claim about the text right next to it, and the only thing that can check it
@@ -724,8 +727,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         return
       }
 
-      // Re-check the destination folder: if a folder in ModConfig was swapped for a link after the
-      // pre-pass, stop before lstat, readFile or copy touch anything through the link (#626).
+      // Check the destination folder again before inspecting the entry. It may have changed
+      // since the pre-pass (#626), and the recovery copy needs its own check below.
       await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
 
       const existing = await fse.lstat(entry.destination).catch(() => undefined)
@@ -763,6 +766,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         return
       }
       await fse.ensureDir(dirname(backupPath))
+      await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
       try {
         // The option pair `preserveUnreadableStore` uses (src/ipc/accountStore.ts): overwrite is
         // off, so an existing destination is left as it is instead of being clobbered.
@@ -784,6 +788,13 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
         failed.push({ name: entry.key, reason: "copy-failed" })
         refused.add(entry.key)
+      }
+      if (refused.has(entry.key)) return
+      try {
+        await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
+      } catch (error) {
+        await fse.remove(backupPath)
+        throw error
       }
     }
 

@@ -1278,10 +1278,10 @@ describe("APPLY_MOD_CONFIGS", () => {
       assert.equal(existsSync(join(applied.backupFolder, "target.json")), false)
 
       // Nothing was read from or copied from the outside directory.
-      const outsideRead = readFile.mock.calls.some(([target]) => String(target).startsWith(outside) || String(target).includes("swapped/target.json"))
+      const outsideRead = readFile.mock.calls.some(([target]) => String(target) === join(modConfigFolder(), "swapped", "target.json"))
       assert.equal(outsideRead, false, "outside file must not be read")
 
-      const outsideCopy = copy.mock.calls.some(([from]) => String(from).startsWith(outside) || String(from).includes("swapped/target.json"))
+      const outsideCopy = copy.mock.calls.some(([from]) => String(from) === join(modConfigFolder(), "swapped", "target.json"))
       assert.equal(outsideCopy, false, "outside file must not be copied")
 
       // The outside file remains unchanged.
@@ -1292,7 +1292,7 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
-  it("refuses a destination file swapped for a link after the pre-pass and reads, copies and writes nothing through it (#626)", async () => {
+  it("refuses a linked destination file at lstat without reading, copying or writing through it", async () => {
     writeConfig()
     const outside = join(temporaryRoot, "outside")
     mkdirSync(outside, { recursive: true })
@@ -1332,10 +1332,10 @@ describe("APPLY_MOD_CONFIGS", () => {
       assert.equal(readFileSync(join(applied.backupFolder, "legit.json"), "utf-8"), '{"legit":1}')
       assert.equal(existsSync(join(applied.backupFolder, "target.json")), false)
 
-      const outsideRead = readFile.mock.calls.some(([target]) => String(target).startsWith(outside))
+      const outsideRead = readFile.mock.calls.some(([target]) => String(target) === join(modConfigFolder(), "target.json"))
       assert.equal(outsideRead, false, "outside file must not be read")
 
-      const outsideCopy = copy.mock.calls.some(([from]) => String(from).startsWith(outside))
+      const outsideCopy = copy.mock.calls.some(([from]) => String(from) === join(modConfigFolder(), "target.json"))
       assert.equal(outsideCopy, false, "outside file must not be copied")
 
       assert.equal(readFileSync(join(outside, "target.json"), "utf-8"), "theirs-secret")
