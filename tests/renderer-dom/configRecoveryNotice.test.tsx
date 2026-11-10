@@ -81,8 +81,8 @@ describe("config not-an-object notice (#625)", () => {
 
     await waitFor(() => expect(seen).toHaveLength(1))
     expect(seen[0]?.type).toBe("warning")
-    expect(seen[0]?.body).toContain("Your settings file is valid JSON but does not contain a settings object")
-    expect(seen[0]?.body).toContain("restore a settings object in config.unreadable-1727690000000.json")
+    expect(seen[0]?.body).toContain("Your settings file didn't contain any settings.")
+    expect(seen[0]?.body).toContain("A copy was kept as config.unreadable-1727690000000.json")
     expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
   })
 
@@ -115,7 +115,7 @@ describe("config not-an-object notice (#625)", () => {
     await waitFor(() => expect(seen).toHaveLength(1))
     expect(seen[0]?.type).toBe("warning")
     expect(seen[0]?.body).toContain("defaults are being used")
-    expect(seen[0]?.body).toContain("restore a settings object in config.unreadable-1727690000000.json")
+    expect(seen[0]?.body).toContain("A copy was kept as config.unreadable-1727690000000.json")
     expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
   })
 })
@@ -212,7 +212,7 @@ describe("config recovery notice language (#619)", () => {
       // Returns once the provider has had its turn with the notice.
       arrive: () =>
         act(async () => {
-          notice.resolve({ kind: "unreadable", restored: true, preserved: true, copyName })
+          notice.resolve({ kind: "unreadable", restored: true, preserved: true, copyName, cause: "invalid-json" })
           await notice.promise
         }),
       land: async () => {

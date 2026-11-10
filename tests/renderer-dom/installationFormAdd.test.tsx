@@ -47,7 +47,7 @@ function renderAddInstallation(): ReturnType<typeof renderWithProviders> {
 describe("AddInstallation", () => {
   it("submits the default fields, adds the Installation and returns to the list", async () => {
     const user = userEvent.setup()
-    const ensurePathExists = vi.fn(async () => true)
+    const ensurePathExists = vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: true }))
     const savedConfigs: ConfigType[] = []
     installMockWindowApi({
       configManager: {
@@ -151,7 +151,7 @@ describe("AddInstallation", () => {
 
   it("accepts a Backups max amount of 0 and saves the Installation with backups turned off", async () => {
     const user = userEvent.setup()
-    const ensurePathExists = vi.fn(async () => true)
+    const ensurePathExists = vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: true }))
     const savedConfigs: ConfigType[] = []
     installMockWindowApi({
       configManager: {
@@ -183,7 +183,7 @@ describe("AddInstallation", () => {
 
   it("refuses a negative, fractional or above-100 Backups max amount and stays on the form", async () => {
     const user = userEvent.setup()
-    const ensurePathExists = vi.fn(async () => true)
+    const ensurePathExists = vi.fn(async (): Promise<EnsurePathExistsResult> => ({ ok: true }))
     const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
     installMockWindowApi({
       configManager: {

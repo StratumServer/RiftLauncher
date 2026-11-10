@@ -5,6 +5,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
+import { resolveStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
 export interface ManageInstalledMods {
   /** Mods the scan could read, ModDB details and update candidates already attached. */
@@ -28,7 +29,7 @@ export interface ManageInstalledMods {
  */
 export function useManageInstalledMods(installation: InstallationType | undefined): ManageInstalledMods {
   const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
+  const { addNotification, resolveNotification } = useNotificationsContext()
   const { schemaVersion } = useSettingsConfig()
   const isConfigLoaded = schemaVersion !== 0
 
@@ -52,7 +53,10 @@ export function useManageInstalledMods(installation: InstallationType | undefine
 
     const mods = await getCompleteInstalledMods({
       path: installation.path,
-      version: installation.version
+      version: installation.version,
+      onFinish: (updates, failedLookups) => {
+        if (updates === 0 && failedLookups === 0) resolveStartupModUpdateNotice(installation.id, resolveNotification)
+      }
     })
 
     syncModsCount(installation.id, mods)

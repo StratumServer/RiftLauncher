@@ -323,7 +323,7 @@ async function loadConfigFromDisk(): Promise<ConfigType> {
  * not be preserved is never followed by overwriting the only other copy there was (see the
  * blocking review note on this: a failed preservation must not still lead to `saveConfig`).
  */
-async function recoverFromUnreadableConfig(err: unknown, cause: ConfigRecoveryUnreadableCause = "invalid-json"): Promise<ConfigType> {
+async function recoverFromUnreadableConfig(err: unknown, cause: ConfigRecoveryUnreadableCause): Promise<ConfigType> {
   if (cause === "not-an-object") {
     logMessage("error", `${LOG_PREFIX} [getConfig] Config is not an object. Preserving a copy and recovering.`)
   } else {
@@ -598,11 +598,11 @@ function stripLegacyAccountSecrets(document: unknown): boolean {
 async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
   const backupPath = getConfigBackupPath()
   try {
-    let existingUsable = false
     if (await fse.pathExists(backupPath)) {
+      let existing: unknown
+      let existingUsable = false
       try {
-        const existing: unknown = await fse.readJSON(backupPath)
-        if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
+        existing = await fse.readJSON(backupPath)
         const migration = migrateConfigDocument(existing)
         existingUsable = migration.outcome === "migrated" || migration.outcome === "already-current"
         if (!existingUsable) {
@@ -610,9 +610,9 @@ async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
         }
       } catch (err) {
         logMessage("debug", `${LOG_PREFIX} [reconcileConfigBackup] Existing pre-migration backup could not be read: ${err}`)
-        existingUsable = false
       }
 
+      if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
       if (existingUsable) return
     }
 
