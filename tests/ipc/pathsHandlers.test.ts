@@ -19,10 +19,10 @@ import { shell } from "electron"
 import fse from "fs-extra"
 
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
-import { deleteInstallation } from "@domain/installations/delete"
+import { deleteInstallation, type DeleteInstallationPorts } from "@domain/installations/delete"
 import { restoreInstallationBackup } from "@domain/installations/restore"
 import { uninstallGameVersion } from "@domain/versions/uninstall"
-import type { FileSystem } from "@domain/ports"
+import type { FileSystem, InstallationLeaseOutcome } from "@domain/ports"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { runCompression } from "@src/ipc/workers/compression"
 import { runExtraction } from "@src/ipc/workers/extraction"
@@ -1421,6 +1421,11 @@ describe("restoring or deleting an Installation that holds another managed folde
     )
   }
 
+  const deletePorts = (fileSystem: Pick<FileSystem, "exists" | "remove">): DeleteInstallationPorts => ({
+    fileSystem,
+    installationLease: { acquire: async (): Promise<InstallationLeaseOutcome> => ({ ok: true as const, release: (): void => undefined }) }
+  })
+
   beforeEach(async () => {
     outer = join(managedFolder, "Main")
     inner = join(outer, "Installations", "Modded")
@@ -1553,9 +1558,9 @@ describe("restoring or deleting an Installation that holds another managed folde
 
     it("refuses to delete the Installation with its data, and keeps the archives", async () => {
       writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }], worldBackups: [{ id: "wo", date: 1, path: worldArchive, worldName: "w.vcdbs" }] }) })
-      const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+      const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-      assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+      assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
 
       assert.equal(fse.readFileSync(otherArchive, "utf-8"), "other installation backup")
       assert.equal(fse.readFileSync(worldArchive, "utf-8"), "other world backup")
@@ -1581,6 +1586,7 @@ describe("restoring or deleting an Installation that holds another managed folde
           { id: "main", name: "Main", path: outer, backups: [{ id: "b2", date: 2, path: ownBackup }], worldBackups: [{ id: ownWorldId, date: 2, path: ownWorldBackup, worldName: "w.vcdbs" }] }
         ] as unknown as ConfigType["installations"]
       const snapshot = (): Parameters<typeof deleteInstallation>[1]["installation"] => ({
+        id: "main",
         path: outer,
         backups: [{ id: "b2", path: ownBackup }],
         worldBackups: [{ id: ownWorldId, path: ownWorldBackup }],
@@ -1592,7 +1598,7 @@ describe("restoring or deleting an Installation that holds another managed folde
       it("deletes the Installation with its data, and the records leave with it", async () => {
         writeConfig({ installations: ownRecords() })
 
-        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot(), deleteData: true }), { ok: true, failedBackupPaths: [] })
+        assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot(), deleteData: true }), { ok: true, failedBackupPaths: [] })
 
         assert.equal(fse.pathExistsSync(outer), false)
       })
@@ -1609,7 +1615,7 @@ describe("restoring or deleting an Installation that holds another managed folde
       it("still refuses the delete when an archive of another Installation sits inside as well", async () => {
         writeConfig({ installations: [...ownRecords(), { id: "other", name: "Other", path: other, backups: [{ id: "bo", date: 1, path: otherArchive }] }] as unknown as ConfigType["installations"] })
 
-        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot(), deleteData: true }), { ok: false, reason: "data-delete-failed" })
+        assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot(), deleteData: true }), { ok: false, reason: "data-delete-failed" })
 
         assert.equal(fse.readFileSync(otherArchive, "utf-8"), "other installation backup")
         assert.equal(fse.readFileSync(ownBackup, "utf-8"), "own archive")
@@ -1690,8 +1696,8 @@ describe("restoring or deleting an Installation that holds another managed folde
     async function attempt(action: Action): Promise<boolean> {
       const fileSystem = await hostFileSystem()
       if (action === "restore") return (await restoreOuter(fileSystem)).ok
-      const snapshot = { path: outer, backups: [{ id: "b", path: archive }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
-      return (await deleteInstallation({ fileSystem }, { installation: snapshot, deleteData: true })).ok
+      const snapshot = { id: "main", path: outer, backups: [{ id: "b", path: archive }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+      return (await deleteInstallation(deletePorts(fileSystem), { installation: snapshot, deleteData: true })).ok
     }
 
     /** A refused attempt changed nothing: the Installation is as it was and no set-aside folder is left. */
@@ -1766,8 +1772,8 @@ describe("restoring or deleting an Installation that holds another managed folde
         assertUntouched()
 
         fse.moveSync(inner, movedOut)
-        const snapshot = { path: inner, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
-        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
+        const snapshot = { id: "inner", path: inner, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+        assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
         await change({ installations: as([mainEntry()]) })
         await change({ installations: as([mainEntry(), { ...modded, id: "modded-again", path: movedOut }]) })
 
@@ -1866,8 +1872,8 @@ describe("restoring or deleting an Installation that holds another managed folde
         assert.equal(await attempt(action), false)
         assertUntouched()
 
-        const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
-        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
+        const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+        assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
         assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
         await change({ installations: as([mainEntry()]) })
 
@@ -1888,21 +1894,21 @@ describe("restoring or deleting an Installation that holds another managed folde
   it("refuses to delete an Installation with its data while it holds another Installation, but deletes the inner one", async () => {
     writeConfig({ installations: installationsOf(outer, inner) })
     const fileSystem = await hostFileSystem()
-    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+    const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-    assert.deepEqual(await deleteInstallation({ fileSystem }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.deepEqual(await deleteInstallation(deletePorts(fileSystem), { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
     assert.equal(fse.pathExistsSync(join(inner, "Saves", "modded.vcdbs")), true)
 
-    assert.deepEqual(await deleteInstallation({ fileSystem }, { installation: { ...snapshot, path: inner }, deleteData: true }), { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(await deleteInstallation(deletePorts(fileSystem), { installation: { ...snapshot, id: "inner", path: inner }, deleteData: true }), { ok: true, failedBackupPaths: [] })
     assert.equal(fse.pathExistsSync(inner), false)
   })
 
   it("deletes an Installation with its data when nothing else managed sits inside it", async () => {
     fse.removeSync(inner)
     writeConfig({ installations: installationsOf(outer) })
-    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+    const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: true }), { ok: true, failedBackupPaths: [] })
     assert.equal(fse.pathExistsSync(outer), false)
   })
 
@@ -1910,9 +1916,9 @@ describe("restoring or deleting an Installation that holds another managed folde
     // The macOS pair "Creative World" and "creative world", or hand-edited duplicates: one folder, two records.
     fse.removeSync(inner)
     writeConfig({ installations: installationsOf(outer, outer) })
-    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+    const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
     assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
     assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
   })
@@ -1920,9 +1926,9 @@ describe("restoring or deleting an Installation that holds another managed folde
   it("refuses to delete an Installation whose folder is also a VS Version", async () => {
     fse.removeSync(inner)
     writeConfig({ installations: installationsOf(outer), gameVersions: [{ id: "g", label: "1.20.0", version: "1.20.0", path: outer }] as unknown as ConfigType["gameVersions"] })
-    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+    const snapshot = { id: "main", path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
     assert.equal(fse.pathExistsSync(join(outer, "Saves", "main.vcdbs")), true)
   })
 
@@ -1934,9 +1940,9 @@ describe("restoring or deleting an Installation that holds another managed folde
     mkdirSync(join(outer, "Backups"), { recursive: true })
     writeFileSync(archiveBehindLink, "backup")
     writeConfig({ backupsFolder: join(link, "Backups"), installations: installationsOf(outer) })
-    const snapshot = { path: outer, backups: [{ id: "x", path: archiveBehindLink }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+    const snapshot = { id: "main", path: outer, backups: [{ id: "x", path: archiveBehindLink }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
 
-    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.deepEqual(await deleteInstallation(deletePorts(await hostFileSystem()), { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
     assert.equal(fse.readFileSync(archiveBehindLink, "utf-8"), "backup")
   })
 
