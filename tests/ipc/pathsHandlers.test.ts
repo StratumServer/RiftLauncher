@@ -454,37 +454,56 @@ describe("CHECK_PATH_EMPTY / CHECK_PATH_EXISTS / ENSURE_PATH_EXISTS", () => {
     assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS)(event, join(managedFolder, "missing")), false)
   })
 
-  it("ENSURE_PATH_EXISTS creates an authorized missing folder and returns true", async () => {
+  it("ENSURE_PATH_EXISTS creates an authorized missing folder and returns ok", async () => {
     const event = await createTrustedEvent()
     const target = join(managedFolder, "NewFolder")
-    const result = await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, target)
-    assert.equal(result, true)
+    const result = await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, target)
+    assert.deepEqual(result, { ok: true })
 
     const { existsSync } = await import("node:fs")
     assert.equal(existsSync(target), true)
   })
 
-  // AddInstallation's folder field is free text, and its guard turns a false
-  // here into "we could not make that folder" and stops the add. Answering true
+  // AddInstallation's folder guard turns a failure
+  // here into "we could not make that folder" and stops the add. Answering ok
   // for a regular file would put an installation entry on it, which is the
   // dangling entry the guard exists to prevent, and that path then feeds the
   // launch --dataPath, the backup compression and the mod scan.
-  it("ENSURE_PATH_EXISTS returns false for an authorized path that exists as a regular file", async () => {
+  it("ENSURE_PATH_EXISTS returns failed for an authorized path that exists as a regular file", async () => {
     const event = await createTrustedEvent()
     const file = join(managedFolder, "notes.txt")
     writeFileSync(file, "x", "utf-8")
 
-    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, file), false)
+    assert.deepEqual(await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, file), { ok: false, reason: "failed" })
 
     const { readFileSync } = await import("node:fs")
     assert.equal(readFileSync(file, "utf-8"), "x")
   })
 
-  it("ENSURE_PATH_EXISTS returns false for a path nothing authorizes", async () => {
+  it("ENSURE_PATH_EXISTS returns unauthorized-path for a path nothing authorizes", async () => {
     const event = await createTrustedEvent()
     const outside = join(temporaryRoot, "unmanaged", "NewFolder")
-    const result = await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, outside)
-    assert.equal(result, false)
+    const result = await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, outside)
+    assert.deepEqual(result, { ok: false, reason: "unauthorized-path" })
+  })
+
+  it("ENSURE_PATH_EXISTS returns unauthorized-path when user folder approval has expired (#742)", async () => {
+    const { registerUserSelectedPaths } = await import("@src/ipc/pathPolicy")
+    const picked = join(temporaryRoot, "PickedExternal", "NewInstallation")
+    const event = await createTrustedEvent()
+
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(new Date("2026-10-27T12:00:00Z"))
+      registerUserSelectedPaths([picked])
+      const ensure = handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)
+      assert.deepEqual(await ensure(event, picked), { ok: true })
+
+      vi.setSystemTime(new Date(Date.parse("2026-10-27T12:00:00Z") + 11 * 60_000))
+      assert.deepEqual(await ensure(event, picked), { ok: false, reason: "unauthorized-path" })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -547,7 +566,7 @@ describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked 
   // directory on the way through ensureDir.
   it("ENSURE_PATH_EXISTS reports the linked folder as present and leaves the link alone", async () => {
     const event = await createTrustedEvent()
-    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, linkedMods), true)
+    assert.deepEqual(await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, linkedMods), { ok: true })
 
     const { lstatSync } = await import("node:fs")
     assert.equal(lstatSync(linkedMods).isSymbolicLink(), true)
@@ -591,7 +610,7 @@ describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked 
   // the folder would appear inside the link target, outside the grant.
   it("ENSURE_PATH_EXISTS refuses to create a folder through the link", async () => {
     const event = await createTrustedEvent()
-    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), false)
+    assert.deepEqual(await handler<Promise<EnsurePathExistsResult>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), { ok: false, reason: "failed" })
 
     const { existsSync } = await import("node:fs")
     assert.equal(existsSync(join(realMods, "New")), false)
