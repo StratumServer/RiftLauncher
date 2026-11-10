@@ -790,7 +790,7 @@ describe("GET_MOD_CONFIGS", () => {
     if (!listed.ok) return
     assert.deepEqual(listed.configs, [{ name: "fine.json", bytes: 2 }])
     assert.deepEqual(listed.linked, [])
-    assert.deepEqual(listed.unreadable, ["f\uFFFD.json"])
+    assert.deepEqual(listed.unreadable, ["f\\xFF.json"])
 
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
     const exported = await collectModConfigs(installationPath)
@@ -824,6 +824,12 @@ describe("GET_MOD_CONFIGS", () => {
         isDirectory: (): boolean => false,
         isSymbolicLink: (): boolean => false,
         isFile: (): boolean => true
+      },
+      {
+        name: Buffer.from([0x64, 0xff]),
+        isDirectory: (): boolean => true,
+        isSymbolicLink: (): boolean => false,
+        isFile: (): boolean => false
       }
     ]
     const readdir = vi.spyOn(fse, "readdir").mockResolvedValue(fakeDirents as never)
@@ -835,7 +841,7 @@ describe("GET_MOD_CONFIGS", () => {
       if (!listed.ok) return
       assert.deepEqual(listed.configs, [{ name: "fine.json", bytes: 2 }])
       assert.deepEqual(listed.linked, [])
-      assert.deepEqual(listed.unreadable, ["f\uFFFD.json"])
+      assert.deepEqual(listed.unreadable?.slice().sort(), ["d\\xFF", "f\\xFF.json"])
     } finally {
       readdir.mockRestore()
     }
@@ -868,13 +874,13 @@ describe("GET_MOD_CONFIGS", () => {
     const fse = (await import("fs-extra")).default
     const total = (MAX_MOD_CONFIG_LISTING_ENTRIES ?? 10_000) + 1
     const fakeFiles = Array.from({ length: total }, (_, index) => ({
-      name: `c${index}.json`,
+      name: Buffer.from(`c${index}.json`),
       isDirectory: (): boolean => false,
       isSymbolicLink: (): boolean => false,
       isFile: (): boolean => true
     }))
     const fakeLinks = Array.from({ length: total }, (_, index) => ({
-      name: `l${index}.json`,
+      name: Buffer.from(`l${index}.json`),
       isDirectory: (): boolean => false,
       isSymbolicLink: (): boolean => true,
       isFile: (): boolean => false
@@ -908,7 +914,7 @@ describe("GET_MOD_CONFIGS", () => {
     const fse = (await import("fs-extra")).default
     const total = (MAX_MOD_CONFIG_LISTING_ENTRIES ?? 10_000) + 1
     const fakeFiles = Array.from({ length: total }, (_, index) => ({
-      name: `c${index}.json`,
+      name: Buffer.from(`c${index}.json`),
       isDirectory: (): boolean => false,
       isSymbolicLink: (): boolean => false,
       isFile: (): boolean => true
@@ -1709,7 +1715,7 @@ describe("APPLY_MOD_CONFIGS", () => {
 
   it("refuses a request past the entry ceiling, before it looks at any of it", async () => {
     const { MAX_MODPACK_ENTRIES } = await import("@src/ipc/handlers/modConfigs")
-    const files = Array.from({ length: MAX_MODPACK_ENTRIES + 1 }, (_, index) => ({ name: `c${index}.json`, ...entry("{}") }))
+    const files = Array.from({ length: MAX_MODPACK_ENTRIES + 1 }, (_, index) => ({ name: Buffer.from(`c${index}.json`), ...entry("{}") }))
 
     await assert.rejects(applyModConfigsHandler()(await createTrustedEvent(), installationPath, files), { name: "TypeError" })
   })

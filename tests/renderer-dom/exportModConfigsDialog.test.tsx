@@ -258,7 +258,19 @@ describe("Manage Mods: the mod config export picker", () => {
     const box = (await screen.findByLabelText(/^f\uFFFD\.json/, {}, { timeout: 3000 })) as HTMLInputElement
     expect(box.checked).toBe(false)
     expect(box.disabled).toBe(true)
-    expect(within(box.closest("li") as HTMLElement).getByText("This file name could not be read.")).toBeTruthy()
+    expect(within(box.closest("li") as HTMLElement).getByText("Names that are not valid text cannot travel in a modpack.")).toBeTruthy()
+  })
+
+  it("gives duplicate unreadable names their own disabled checkboxes", async () => {
+    const name = "f\uFFFD.json"
+    mountWithConfigs([{ name, bytes: 2 }], { success: true }, [], [name, name])
+    await askForConfigs()
+    await openThePicker()
+    const boxes = screen.getAllByLabelText(/^f\uFFFD\.json/) as HTMLInputElement[]
+    expect(boxes).toHaveLength(3)
+    expect(new Set(boxes.map((box) => box.id)).size).toBe(3)
+    expect(boxes.filter((box) => box.disabled)).toHaveLength(2)
+    expect(boxes.find((box) => !box.disabled)?.checked).toBe(true)
   })
 
   it("does not prompt to untick anything when no file can travel", async () => {

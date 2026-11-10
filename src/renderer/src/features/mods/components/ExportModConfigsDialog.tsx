@@ -164,10 +164,10 @@ function ExportModConfigsDialog({
                   </label>
                 </li>
               ))}
-              {listing.unreadable?.map((name) => (
-                <li key={`unreadable-${name}`} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
-                  <Input id={`export-mod-config-${name}`} type="checkbox" checked={false} disabled />
-                  <label htmlFor={`export-mod-config-${name}`} className="flex-1 overflow-hidden">
+              {listing.unreadable?.map((name, index) => (
+                <li key={`unreadable-${index}`} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
+                  <Input id={`export-unreadable-mod-config-${index}`} type="checkbox" checked={false} disabled />
+                  <label htmlFor={`export-unreadable-mod-config-${index}`} className="flex-1 overflow-hidden">
                     <span className="block truncate font-bold">{name}</span>
                     <span className="block truncate text-sm text-zinc-300">{t("features.mods.exportModConfigsUnreadableName")}</span>
                   </label>

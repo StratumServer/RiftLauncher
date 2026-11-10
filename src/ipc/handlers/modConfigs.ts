@@ -188,11 +188,11 @@ function digestOf(bytes: Buffer): string {
 export type ExportModpackConfigFailure = ExportModpackRefusal
 
 /**
- * Walks an installation's `ModConfig` folder, finding the JSON files, the symbolic links and any
- * entries whose names are not valid UTF-8.
+ * Walks an installation's `ModConfig` folder for JSON files, links, and invalid UTF-8 names.
  *
- * Symlinks are named and nothing more: following one would let a folder link hand the launcher
- * files from anywhere on the disk, and descending into one would list a folder from anywhere on it.
+ * `assertManagedPath` keeps the root in a managed installation without linked ancestors. `lstat`
+ * sets linked entries aside instead of following them. Match `.json` without case, as Windows does.
+ * Report links by name because apply refuses configs at and below those paths.
  * Entries whose names are not valid UTF-8 are also reported by name and skipped: reading with
  * `encoding: "buffer"` keeps the raw filesystem bytes so an invalid name does not throw ENOENT on
  * `lstat` and take down the whole folder's listing.
@@ -226,19 +226,21 @@ async function walkModConfigs(installationPath: string, options: { ceiling?: num
   const visit = async (folder: string): Promise<void> => {
     const entries = await fse.readdir(folder, { withFileTypes: true, encoding: "buffer" })
     for (const entry of entries) {
-      const rawName: string | Buffer = entry.name as unknown as string | Buffer
-      const isInvalidUtf8 = Buffer.isBuffer(rawName) ? !isUtf8(rawName) : false
-      if (isInvalidUtf8) {
-        const decodedName = Buffer.isBuffer(rawName) ? rawName.toString("utf8") : rawName
-        if (entry.isDirectory() || entry.isSymbolicLink() || (entry.isFile() && decodedName.toLowerCase().endsWith(".json"))) {
+      // The fs-extra types omit the buffer encoding overload for dirents.
+      const rawName = entry.name as unknown as Buffer
+      const entryName = rawName.toString("utf8")
+      if (!isUtf8(rawName)) {
+        if (entry.isDirectory() || entry.isSymbolicLink() || (entry.isFile() && entryName.toLowerCase().endsWith(".json"))) {
           if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
           visitedEntries += 1
-          unreadable.push(keyOf(join(folder, decodedName)))
+          const escapedName = Array.from(rawName, (byte) =>
+            byte >= 0x20 && byte <= 0x7e && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).toUpperCase().padStart(2, "0")}`
+          ).join("")
+          unreadable.push(`${folder === safeRoot ? "" : `${keyOf(folder)}/`}${escapedName}`)
         }
         continue
       }
 
-      const entryName = Buffer.isBuffer(rawName) ? rawName.toString("utf8") : rawName
       const entryPath = join(folder, entryName)
       if (entry.isDirectory()) {
         await visit(entryPath)
