@@ -397,6 +397,26 @@ describe("deleting an installation next to a world transfer", () => {
     return { a, b }
   }
 
+  function deleteB(b: string, deleteData: boolean, fileSystem: Pick<FileSystem, "exists" | "remove"> = fsPort): Promise<DeleteInstallationResult> {
+    return deleteInstallation(
+      {
+        fileSystem,
+        installationLease: createInstallationLeasePort()
+      },
+      {
+        installation: {
+          id: "B",
+          path: b,
+          backups: [],
+          isPlaying: false,
+          isBackingUp: false,
+          isRestoringBackup: false
+        },
+        deleteData
+      }
+    )
+  }
+
   function startDelete(b: string): { done: Promise<DeleteInstallationResult>; removing: () => boolean; finishRemoval: () => void } {
     let finish!: () => void
     const removalGate = new Promise<void>((resolve) => (finish = resolve))
@@ -410,23 +430,7 @@ describe("deleting an installation next to a world transfer", () => {
         return true
       }
     }
-    const done = deleteInstallation(
-      {
-        fileSystem: fs,
-        installationLease: createInstallationLeasePort()
-      },
-      {
-        installation: {
-          id: "B",
-          path: b,
-          backups: [],
-          isPlaying: false,
-          isBackingUp: false,
-          isRestoringBackup: false
-        },
-        deleteData: true
-      }
-    )
+    const done = deleteB(b, true, fs)
     return { done, removing: () => started, finishRemoval: finish }
   }
 
@@ -464,23 +468,7 @@ describe("deleting an installation next to a world transfer", () => {
     const hold = installationActivity.tryAcquireInstallationOperation(["A", "B"])
     assert.equal(hold.ok, true)
 
-    const deleted = await deleteInstallation(
-      {
-        fileSystem: fsPort,
-        installationLease: createInstallationLeasePort()
-      },
-      {
-        installation: {
-          id: "B",
-          path: b,
-          backups: [],
-          isPlaying: false,
-          isBackingUp: false,
-          isRestoringBackup: false
-        },
-        deleteData: true
-      }
-    )
+    const deleted = await deleteB(b, true)
 
     assert.deepEqual(deleted, { ok: false, reason: "installation-busy" })
     assert.equal(existsSync(b), true)
@@ -491,23 +479,7 @@ describe("deleting an installation next to a world transfer", () => {
     const { b } = setUpTwoInstallations()
     installationActivity.markInstallationPlaying("B")
 
-    const deleted = await deleteInstallation(
-      {
-        fileSystem: fsPort,
-        installationLease: createInstallationLeasePort()
-      },
-      {
-        installation: {
-          id: "B",
-          path: b,
-          backups: [],
-          isPlaying: false,
-          isBackingUp: false,
-          isRestoringBackup: false
-        },
-        deleteData: true
-      }
-    )
+    const deleted = await deleteB(b, true)
 
     assert.deepEqual(deleted, { ok: false, reason: "installation-playing" })
     assert.equal(existsSync(b), true)
@@ -518,23 +490,7 @@ describe("deleting an installation next to a world transfer", () => {
     const hold = installationActivity.tryAcquireInstallationOperation(["A", "B"])
     assert.equal(hold.ok, true)
 
-    const deleted = await deleteInstallation(
-      {
-        fileSystem: fsPort,
-        installationLease: createInstallationLeasePort()
-      },
-      {
-        installation: {
-          id: "B",
-          path: b,
-          backups: [],
-          isPlaying: false,
-          isBackingUp: false,
-          isRestoringBackup: false
-        },
-        deleteData: false
-      }
-    )
+    const deleted = await deleteB(b, false)
 
     assert.deepEqual(deleted, { ok: true, failedBackupPaths: [] })
     if (hold.ok) hold.release()
@@ -546,23 +502,7 @@ describe("deleting an installation next to a world transfer", () => {
     assert.equal(hold.ok, true)
     hold.release()
 
-    const deleted = await deleteInstallation(
-      {
-        fileSystem: fsPort,
-        installationLease: createInstallationLeasePort()
-      },
-      {
-        installation: {
-          id: "B",
-          path: b,
-          backups: [],
-          isPlaying: false,
-          isBackingUp: false,
-          isRestoringBackup: false
-        },
-        deleteData: true
-      }
-    )
+    const deleted = await deleteB(b, true)
 
     assert.deepEqual(deleted, { ok: true, failedBackupPaths: [] })
     assert.equal(existsSync(b), false)
