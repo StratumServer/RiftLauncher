@@ -989,7 +989,7 @@ describe("target installation picker accessibility and live region warning (#630
     const warning = screen.getByRole("status")
 
     // Initially: no target selected, warning is mounted with empty text and sr-only class
-    expect(warning.id).toBe("target-installation-version-warning")
+    expect(warning.id).not.toBe("")
     expect(warning.textContent).toBe("")
     expect(warning.className).toContain("sr-only")
     expect(select.getAttribute("aria-describedby")).toBeNull()
@@ -1004,6 +1004,6 @@ describe("target installation picker accessibility and live region warning (#630
     await user.selectOptions(select, "install-diff")
     expect(warning.textContent).toBe("A world opened with a newer Vintage Story version usually will not work with an older one.")
     expect(warning.className).not.toContain("sr-only")
-    expect(select.getAttribute("aria-describedby")).toBe("target-installation-version-warning")
+    expect(select.getAttribute("aria-describedby")).toBe(warning.id)
   })
 })

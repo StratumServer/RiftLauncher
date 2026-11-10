@@ -257,6 +257,9 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
             backups: olderBackups.map((b) => ({ id: b.id, date: b.date, path: b.path })),
             backupsLimit: installation.backupsLimit
           })
+          if (!pruneOutcome.ok) {
+            logMessage("warn", `${LOG_PREFIX} [BACKUP] Could not prune world backup ${pruneOutcome.failedBackupId}.`)
+          }
           if (pruneOutcome.deletedBackupIds.length > 0) {
             const deletedSet = new Set(pruneOutcome.deletedBackupIds)
             await removeWorldBackupRecords(installation.id, deletedSet)
@@ -305,7 +308,7 @@ async function deleteWorld(installationId: unknown, requestedName: unknown): Pro
       return failure("operation-failed")
     }
   } catch (error) {
-    logMessage("warn", `${LOG_PREFIX} [DELETE] Could not finish deleting this world.`)
+    logMessage("warn", `${LOG_PREFIX} [DELETE] Could not prepare this world delete.`)
     logMessage("debug", `${LOG_PREFIX} [DELETE] ${getErrorMessage(error)}`)
     return failure("operation-failed")
   } finally {
@@ -412,7 +415,9 @@ async function transferWorld(sourceId: unknown, requestedName: unknown, targetId
       const targetFile = worldPath(targetSaves, targetName)
       await assertManagedPath(targetFile, "destination world", { allowMissing: true })
       await fse.copyFile(world.path, targetFile, constants.COPYFILE_EXCL)
-      await fse.utimes(targetFile, stats.atime, stats.mtime).catch(() => undefined)
+      await fse.utimes(targetFile, stats.atime, stats.mtime).catch((error: unknown) => {
+        logMessage("debug", `${LOG_PREFIX} [TRANSFER] Kept the transfer time on the copied world: ${getErrorMessage(error)}`)
+      })
       if (modeValue === "move") {
         try {
           await fse.remove(world.path)
@@ -467,7 +472,10 @@ async function deleteWorldBackup(installationId: unknown, backupIdValue: unknown
       remove: async (path: string): Promise<boolean> => removeWorldBackupArchive(path, backup.id)
     }
     const result = await deleteInstallationBackup({ fileSystem }, { backup: { id: backup.id, path: backup.path, isDeleting: false, isRestoring: false } })
-    if (!result.ok) return failure("operation-failed")
+    if (!result.ok) {
+      logMessage("warn", `${LOG_PREFIX} [DELETE BACKUP] Could not remove world backup ${backup.id}.`)
+      return failure("operation-failed")
+    }
 
     // The archive is gone, so the backup is gone whether or not the record write lands: answering a
     // failure would leave the renderer listing a backup that cannot be restored, and deleting its world

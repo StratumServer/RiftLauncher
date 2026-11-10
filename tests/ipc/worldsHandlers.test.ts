@@ -984,6 +984,28 @@ describe("worlds IPC handlers", () => {
     expect(existsSync(moveSource)).toBe(false)
   })
 
+  it("completes a move and logs when the destination rejects setting times", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const targetPath = join(installationsRoot, "install-b")
+    const sourceFile = join(sourcePath, "Saves", "World.vcdbs")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    mkdirSync(join(targetPath, "Saves"), { recursive: true })
+    writeFileSync(sourceFile, "world-content", "utf8")
+    writeConfig([installation("install-a", sourcePath), installation("install-b", targetPath)])
+    const event = await createTrustedEvent()
+    const log = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+    const times = vi.spyOn(fse, "utimes").mockRejectedValueOnce(new Error("EPERM"))
+    try {
+      assert.deepEqual(await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "move"), { ok: true, targetWorldName: "World.vcdbs" })
+      expect(existsSync(sourceFile)).toBe(false)
+      expect(readFileSync(join(targetPath, "Saves", "World.vcdbs"), "utf8")).toBe("world-content")
+      expect(log).toHaveBeenCalledWith("debug", expect.stringContaining("Kept the transfer time on the copied world: EPERM"))
+    } finally {
+      times.mockRestore()
+      log.mockRestore()
+    }
+  })
+
   it("logs a warning and debug line when deleteWorld fails (#630)", async () => {
     const sourcePath = join(installationsRoot, "install-a")
     mkdirSync(join(sourcePath, "Saves"), { recursive: true })
@@ -998,7 +1020,7 @@ describe("worlds IPC handlers", () => {
     assertManagedDeletionPathSpy.mockRejectedValueOnce(new TypeError("Protected path"))
     const deleteFailOuter = await handler("worlds-delete")(event, "install-a", "World.vcdbs")
     assert.deepEqual(deleteFailOuter, { ok: false, reason: "operation-failed" })
-    expect(logSpy).toHaveBeenCalledWith("warn", "[back] [ipc] [ipc/handlers/worldsHandlers.ts] [DELETE] Could not finish deleting this world.")
+    expect(logSpy).toHaveBeenCalledWith("warn", "[back] [ipc] [ipc/handlers/worldsHandlers.ts] [DELETE] Could not prepare this world delete.")
     expect(logSpy).toHaveBeenCalledWith("debug", expect.stringContaining("Protected path"))
 
     logSpy.mockClear()
