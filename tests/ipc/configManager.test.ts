@@ -2104,10 +2104,11 @@ describe("the failed-import marker and saveConfig", () => {
     rmSync(join(userDataFolder, "config.json"))
     mkdirSync(join(userDataFolder, "config.json", "inside"), { recursive: true })
 
+    // On Windows the rename onto a folder is EPERM, which writeJsonAtomic retries for its 3 s window: the timeout must sit well above it.
     assert.equal(await saveConfig({ ...config, favMods: [5] }), false)
 
     assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), true)
-  })
+  }, 15_000)
 
   it("hands the renderer one notice that the import failed, once", async () => {
     const { noteUserDataImportFailed, takePendingConfigRecoveryNotice } = await freshConfigManager()
