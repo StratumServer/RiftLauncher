@@ -388,7 +388,7 @@ describe("ManageMods", () => {
     // same title string, so getByTitle matches two buttons.
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("1 Mod updated, 1 left as it was. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.queryByText("All the Mods were updated successfully.")).toBeNull()
     expect(screen.queryByText(/Finished download:/)).toBeNull()
 
