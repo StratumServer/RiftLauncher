@@ -706,6 +706,7 @@
       "backupFailedSkipLaunch": "The backup failed. Launch without a backup this time?",
       "launchAnyway": "Launch anyway",
       "installationPathMissing": "No backup made: this Installation has no data yet. Play it once to generate the data first.",
+      "backupFolderUnavailable": "No backup made: the Backups folder for this Installation is missing. Reconnect the drive or restore the folder, or delete the backups listed from it.",
       "noBackupsFolder": "No backup made: you haven't set a Backups folder. Set one on the Config page.",
       "backupsDisabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",
       "compressNoFreeSpace": "No backup made: the drive holding the Backups folder does not have enough free space for this Installation.",
@@ -769,6 +770,7 @@
         "world-has-sidecars": "This world is open in Vintage Story, or was not closed cleanly after a crash or a power cut. Close the game, or open the world in it once and quit normally, then try again.",
         "archive-not-found": "World backup not found.",
         "invalid-request": "That world operation is not valid.",
+        "backup-folder-unavailable": "No backup made: the shared Worlds backup folder is missing. Reconnect the drive or restore the folder, or delete the backups listed from it on each Installation's Worlds page.",
         "backups-disabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",
         "operation-failed": "The world operation failed. Nothing else was changed."
       }

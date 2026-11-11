@@ -391,6 +391,43 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
+  it("refuses consecutive backups rather than recreating a missing folder with recorded archives (#748)", async () => {
+    const outputFolder = "/backups/Installations/My-Install-Test"
+    const missingArchive = `${outputFolder}/b1.tar.gz`
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b1", { path: missingArchive })] })
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ missing: [outputFolder, missingArchive] })
+    const ports = fakePorts({ fileSystem, archiver })
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.deepEqual(await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents()), {
+        ok: false,
+        reason: "backup-folder-unavailable",
+        deletedBackupIds: []
+      })
+    }
+    assert.deepEqual(requests, [])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      false
+    )
+  })
+
+  it("does not recreate another installation's missing backup folder when their folder names match (#748)", async () => {
+    const outputFolder = "/backups/Installations/My-Install-Test"
+    const archived = snapshot({ backups: [backup("old-a", { path: `${outputFolder}/old.tar.gz` })] })
+    const selected = snapshot({ id: "installation-2", path: "/games/my-second-install" })
+    const { archiver, requests } = fakeArchiver()
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: [outputFolder] }), archiver })
+
+    assert.deepEqual(await makeInstallationBackup(ports, { installation: selected, backupsFolder: "/backups", otherBackups: archived.backups }), {
+      ok: false,
+      reason: "backup-folder-unavailable",
+      deletedBackupIds: []
+    })
+    assert.deepEqual(requests, [])
+  })
+
   it("tells gone, unreachable and live records apart in one list", async () => {
     // b3 was deleted by hand from a folder that is still there. b2 and b6 sit on a drive that is not.
     // Only b3 comes off the list, and the three archives on disk (b1, b4, b5) are at the limit of three,
@@ -535,7 +572,10 @@ describe("makeInstallationBackup archiving", () => {
     const taken = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"
     const { archiver, requests } = fakeArchiver()
 
-    const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }), backupsFolder: "/backups" })
+    const result = await makeInstallationBackup(fakePorts({ archiver, fileSystem: fakeFileSystem({ present: ["/backups/Installations/My-Install-Test"] }) }), {
+      installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }),
+      backupsFolder: "/backups"
+    })
 
     assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
     assert.equal(result.ok && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00_2.tar.gz")

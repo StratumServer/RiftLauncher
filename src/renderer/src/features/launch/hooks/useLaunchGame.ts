@@ -135,7 +135,7 @@ export function useLaunchGame(): LaunchGame {
         // without this backup (#338). Busy, playing, restoring, and missing
         // installation states are hard stops and must not offer an override.
         if (!backupOutcome.ok) {
-          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed"
+          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed" || backupOutcome.reason === "backup-folder-unavailable"
           if (!canLaunchWithoutBackup) return
 
           const launchAnyway = await askToLaunchWithoutBackup()

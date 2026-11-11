@@ -73,7 +73,11 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     const result = await runBackup(
       ports,
-      { installation: toInstallationSnapshot(installation), backupsFolder: settings.backupsFolder },
+      {
+        installation: toInstallationSnapshot(installation),
+        backupsFolder: settings.backupsFolder,
+        otherBackups: installations.filter((entry) => entry.id !== installation.id).flatMap((entry) => entry.backups)
+      },
       {
         onStarted: () => setBackuping(true),
         onFinished: () => setBackuping(false),

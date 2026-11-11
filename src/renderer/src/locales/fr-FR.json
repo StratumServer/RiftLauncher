@@ -737,6 +737,7 @@
       "backupFailedSkipLaunch": "La sauvegarde a échoué. Lancer sans sauvegarde cette fois-ci ?",
       "launchAnyway": "Lancer quand même",
       "installationPathMissing": "Aucune sauvegarde faite : cette installation n'a pas encore de données. Jouez-y une fois pour les générer.",
+      "backupFolderUnavailable": "Aucune sauvegarde faite : le dossier des sauvegardes de cette installation est introuvable. Reconnectez le disque, rétablissez le dossier ou supprimez les sauvegardes de ce dossier dans la liste.",
       "noBackupsFolder": "Aucune sauvegarde faite : vous n'avez pas défini de dossier des sauvegardes. Choisissez-en un sur la page Configuration.",
       "backupsDisabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
       "compressNoFreeSpace": "Aucune sauvegarde faite : le disque qui contient le dossier des sauvegardes n'a pas assez d'espace libre pour cette installation.",
@@ -802,6 +803,7 @@
         "world-has-sidecars": "Ce monde est ouvert dans Vintage Story, ou n'a pas été fermé correctement après un plantage ou une coupure de courant. Fermez le jeu, ou ouvrez ce monde une fois dans le jeu et quittez-le normalement, puis réessayez.",
         "archive-not-found": "Sauvegarde du monde introuvable.",
         "invalid-request": "Cette opération sur le monde n'est pas valide.",
+        "backup-folder-unavailable": "Aucune sauvegarde faite : le dossier partagé des sauvegardes de mondes est introuvable. Reconnectez le disque, rétablissez le dossier ou supprimez les sauvegardes de ce dossier depuis la page Mondes de chaque installation.",
         "backups-disabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
         "operation-failed": "L'opération sur le monde a échoué. Rien d'autre n'a été modifié."
       }
