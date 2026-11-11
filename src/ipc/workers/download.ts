@@ -134,9 +134,18 @@ export function runDownload(options: DownloadOptions): Promise<string> {
       settled = true
       activeRequest?.destroy()
       responseStream?.destroy()
-      writer?.destroy()
-      void fse.remove(temporaryPath).catch(() => undefined)
-      rejectPromise(new DownloadError(statusCode))
+      // Reject only once the partial file is closed and gone: on Windows an open
+      // or half-deleted file blocks the caller from removing its folder.
+      void (async (): Promise<void> => {
+        const stream = writer
+        if (stream && !stream.closed)
+          await new Promise<void>((resolveClose) => {
+            stream.once("close", resolveClose)
+            stream.destroy()
+          })
+        await fse.remove(temporaryPath).catch(() => undefined)
+        rejectPromise(new DownloadError(statusCode))
+      })()
     }
 
     try {

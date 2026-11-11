@@ -207,7 +207,7 @@ function ListMods(): JSX.Element {
                   // The server folders are read by their own scan, and the game writes them while
                   // the player is in game, so Reload has to reach both halves of the page.
                   setServerModsReload((count) => count + 1)
-                  void refresh()
+                  void refresh(true)
                 }}
               />
             </StickyMenuGroup>

@@ -592,5 +592,15 @@ describe("runDownload SHA-256", () => {
     await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", maxBytes: 4, request: transport.fn }), /Download failed/)
 
     assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+    assert.deepEqual(leftoverParts(), [])
+  })
+
+  it("removes the partial file by the time a digest mismatch rejects", async () => {
+    const payload = body("the official build")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    await assert.rejects(runDownload({ url: ALLOWED_URL, outputPath: destination, fileName: "game.tar.gz", expectedMd5: "0".repeat(32), request: transport.fn }), /Download failed/)
+
+    assert.deepEqual(leftoverParts(), [])
   })
 })

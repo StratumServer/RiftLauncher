@@ -59,7 +59,7 @@ jobs:
       - name: Typecheck the conformance script
         run: npx tsc --noEmit -p tests/e2e/tsconfig.json
       - name: Run the conformance script (clean install, seeded-key uninstall, our extraction)
-        run: npx tsx tests/e2e/windows-install.ts
+        run: npx tsx --tsconfig tests/e2e/tsconfig.json tests/e2e/windows-install.ts
         env:
           RIFT_WINDOWS_VERSION: ${{ inputs.game_version }}
       - name: Upload conformance report (scenario 1, 2 and 3 verdicts)
