@@ -672,24 +672,25 @@ declare global {
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
   type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason; refusedPaths?: string[] }
 
+  type ConfigRecoveryUnreadableCause = "invalid-json" | "not-an-object"
+
   /**
    * What `getConfig` found on the read that mattered, pulled once by the renderer through
    * GET_CONFIG_RECOVERY_NOTICE (#554). Three shapes:
    *
    * - `kind: "unreadable"`: `config.json` parsed to bad JSON, or to valid JSON that is not an
-   *   object. `restored` says whether a pre-migration backup was usable, or the launcher fell back
-   *   to defaults. `preserved`/`copyName` say whether a copy of the unreadable file could be kept
-   *   aside: when it could not, `getConfig` runs the recovered config in memory only, for this
-   *   session, and never wrote it over the original file, so `copyName` is null and there is
-   *   nothing to point the player at.
+   *   object. `cause` distinguishes invalid JSON from valid JSON with an unexpected top-level
+   *   value, so the notice can describe what happened accurately. `restored` says whether a
+   *   pre-migration backup was usable, or the launcher fell back to defaults. `preserved`/`copyName`
+   *   say whether a copy of the unreadable file could be kept aside: when it could not, `getConfig`
+   *   runs the recovered config in memory only, for this session, and never wrote it over the
+   *   original file, so `copyName` is null and there is nothing to point the player at.
    * - `kind: "read-failed"`: the file itself could not even be opened (permissions, a Windows
    *   sharing lock). Nothing says the document inside is corrupt, so there is nothing to preserve
    *   and no copy name to give: this session simply runs on defaults, in memory only.
    * - `kind: "import-failed"`: the first-run copy of VS Launcher's data failed (#708). The launcher
    *   started on an empty profile and leaves a marker so the next start tries the import again.
    */
-  type ConfigRecoveryUnreadableCause = "invalid-json" | "not-an-object"
-
   type ConfigRecoveryNotice =
     | { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null; cause: ConfigRecoveryUnreadableCause }
     | { kind: "read-failed" }
