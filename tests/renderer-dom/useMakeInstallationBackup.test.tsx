@@ -242,6 +242,53 @@ describe("useMakeInstallationBackup with the Backups folder on a drive that is n
 })
 
 /**
+ * Issue #748. An archive missing because its Backups folder went missing must survive even when
+ * the new backup recreates that folder.
+ */
+describe("useMakeInstallationBackup when a recorded backup folder is missing", () => {
+  it("reports an unavailable recorded backup folder without creating it", async () => {
+    const deletePath = vi.fn(async () => true)
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/parent/drive/Backups",
+            installations: [
+              {
+                ...anInstallation(),
+                backupsLimit: 2,
+                backups: [{ id: "backup-old", date: 1_700_000_000_000, path: "/parent/drive/Backups/Installations/Install-A/old.tar.gz" }]
+              }
+            ]
+          })
+        )
+      },
+      pathsManager: {
+        checkPathExists: vi.fn(async (path: string) => {
+          if (path === INSTALLATION_PATH) return true
+          if (path.startsWith("/parent/drive/Backups")) return false
+          return true
+        }),
+        deletePath,
+        compressOnPath: vi.fn(async () => true)
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: false, reason: "backup-folder-unavailable" })
+    expect(api.pathsManager.compressOnPath).not.toHaveBeenCalled()
+    expect(deletePath).not.toHaveBeenCalled()
+    expect(api.utils.logMessage).not.toHaveBeenCalledWith("info", expect.stringContaining("Deleted an old backup"))
+    await waitFor(() => expect(result.current.installations[0]?.backups).toHaveLength(1))
+    expect(result.current.installations[0]?.backups.map((backup) => backup.id)).toContain("backup-old")
+  })
+})
+
+/**
  * Issue #704. The oldest archives used to be deleted, and their records dropped, before the new one was
  * compressed, so a refused backup (a linked Mods folder, a full drive) emptied a limit of 1.
  */

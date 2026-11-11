@@ -566,6 +566,36 @@ describe("MainMenu Play button", () => {
     expect(readProbe().gameVersionPlaying).toBe(false)
   })
 
+  it("offers to launch without a backup when the recorded backup folder is unavailable (#748)", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    const outputFolder = "/backups/Installations/Install-A"
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ backupsAuto: true, backups: [{ id: "old", date: 1, path: `${outputFolder}/old.tar.gz` }] })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      pathsManager: { checkPathExists: vi.fn(async (path: string) => path !== outputFolder && !path.startsWith(`${outputFolder}/`)), compressOnPath: vi.fn(async () => true) },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(SKIP_PROMPT)).toBeTruthy()
+    expect(api.pathsManager.compressOnPath).not.toHaveBeenCalled()
+    expect(executeGame).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByTitle("Launch anyway"))
+    await waitFor(() => expect(executeGame).toHaveBeenCalledOnce())
+  })
+
   it("asks before launching past a failed auto-backup, and Cancel keeps the launch blocked", async () => {
     const user = userEvent.setup()
     const executeGame = vi.fn()

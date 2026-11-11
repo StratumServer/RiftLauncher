@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
-import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { newModScanCache, useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 import { resolveStartupModUpdateNotice } from "@renderer/features/mods/modUpdateNotices"
 
@@ -14,8 +14,12 @@ export interface ManageInstalledMods {
   modsWithErrors: ErrorInstalledModType[]
   /** True while a scan is in flight, for the reload button and the empty state. */
   gettingMods: boolean
-  /** Re-runs the scan. Every flow that writes to the Mods folder calls this when it is done. */
-  refresh: () => Promise<void>
+  /**
+   * Re-reads the Mods folder. Every flow that writes to it calls this when it is done: the ModDB
+   * answers of the last full scan are reused, so it never waits on the network for an id already
+   * handled. `full` asks the ModDB again for every Mod, as opening the page and Reload do.
+   */
+  refresh: (full?: boolean) => Promise<void>
 }
 
 /**
@@ -41,29 +45,51 @@ export function useManageInstalledMods(installation: InstallationType | undefine
 
   const [gettingMods, setGettingMods] = useState<boolean>(false)
 
+  // The last full scan's answers, and which scan they came from. A scan may set the list unless a
+  // later-started scan already did, so a Reload still waiting on the ModDB cannot overwrite a later
+  // toggle with its older folder read. Answers are adopted only from a scan that started later than
+  // the ones already held, so an older full scan landing last cannot replace newer answers.
+  const lastScan = useRef(newModScanCache())
+  const cachedScan = useRef(0)
+  const latestScan = useRef(0)
+  const appliedScan = useRef(0)
+
   useEffect(() => {
     if (!isConfigLoaded) return
-    if (!installation?._updatingMods) refresh()
+    if (!installation?._updatingMods) refresh(true)
   }, [installation?.id, installation?._updatingMods, isConfigLoaded])
 
-  async function refresh(): Promise<void> {
+  async function refresh(full = false): Promise<void> {
     if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
 
     setGettingMods(true)
+    const scan = ++latestScan.current
+    const cache = full ? newModScanCache() : lastScan.current
 
     const mods = await getCompleteInstalledMods({
       path: installation.path,
       version: installation.version,
+      cache,
       onFinish: (updates, failedLookups) => {
+        // A scan already superseded by an applied one read an older folder: its newer sibling
+        // reports for itself, so this one must not resolve the notice on stale evidence.
+        if (scan < appliedScan.current) return
         if (updates === 0 && failedLookups === 0) resolveStartupModUpdateNotice(installation.id, resolveNotification)
       }
     })
 
+    // Answers do not depend on the Installation: a late full scan's are worth keeping.
+    if (full && scan > cachedScan.current) {
+      lastScan.current = cache
+      cachedScan.current = scan
+    }
+    if (scan < appliedScan.current) return
+    appliedScan.current = scan
     syncModsCount(installation.id, mods)
 
     setInstalledMods(mods.mods)
     setModsWithErrors(mods.errors)
-    setGettingMods(false)
+    if (scan === latestScan.current) setGettingMods(false)
   }
 
   return { installedMods, modsWithErrors, gettingMods, refresh }

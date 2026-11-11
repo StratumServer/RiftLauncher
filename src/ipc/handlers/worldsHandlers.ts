@@ -13,7 +13,7 @@ import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
-import { pruneOldestBackups } from "@domain/installations/backup"
+import { isRecordedBackupFolderUnavailable, pruneOldestBackups } from "@domain/installations/backup"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/worldsHandlers.ts]"
@@ -28,6 +28,7 @@ type WorldOperationFailure =
   | "world-has-sidecars"
   | "archive-not-found"
   | "backups-disabled"
+  | "backup-folder-unavailable"
   | "operation-failed"
 type WorldOperationResult = { ok: true } | { ok: false; reason: WorldOperationFailure }
 type WorldFailureResult = { ok: false; reason: WorldOperationFailure }
@@ -224,6 +225,15 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
 
     const backupId = randomUUID()
     const outputFolder = await assertManagedPath(join(config.backupsFolder, WORLD_BACKUPS_FOLDER), "world backup folder", { allowMissing: true })
+    if (
+      await isRecordedBackupFolderUnavailable(
+        { exists: (path) => fse.pathExists(path) },
+        outputFolder,
+        config.installations.flatMap((entry) => entry.worldBackups ?? [])
+      )
+    ) {
+      return failure("backup-folder-unavailable")
+    }
     const archivePath = join(outputFolder, `${backupId}.tar.gz`)
     return await withCloseGuard("Backing up a world.", async () => {
       try {

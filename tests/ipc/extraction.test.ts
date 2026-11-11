@@ -390,7 +390,8 @@ describe("backup round trip", () => {
     const secondName = workspacePath("installation", "Mods", "carrycapacity-1.0.0.zip")
     linkSync(firstName, secondName)
     // The fixture is only worth anything if the two names really are one file.
-    assert.equal(lstatSync(firstName).ino, lstatSync(secondName).ino)
+    // Read as bigint: on NTFS a file id is 64 bits and a double rounds it.
+    assert.equal(lstatSync(firstName, { bigint: true }).ino, lstatSync(secondName, { bigint: true }).ino)
     assert.equal(lstatSync(firstName).nlink, 2)
     const before = readTree(workspacePath("installation"))
     await runCompression({ inputPath: workspacePath("installation"), outputPath: workspacePath("backups"), outputFileName: "backup.tar.gz" })
@@ -418,7 +419,11 @@ describe("backup round trip", () => {
     const restoredSecond = lstatSync(workspacePath("restored", "Mods", "carrycapacity-1.0.0.zip"))
     assert.equal(restoredFirst.nlink, 1)
     assert.equal(restoredSecond.nlink, 1)
-    assert.notEqual(restoredFirst.ino, restoredSecond.ino)
+    // Independence is shown by behaviour, not by comparing inode numbers: on NTFS
+    // a file id is 64 bits and a plain stat rounds it to a double, so two
+    // different files can read as the same number.
+    writeFileSync(workspacePath("restored", "Mods", "carrycapacity.zip"), "changed")
+    assert.equal(readFileSync(workspacePath("restored", "Mods", "carrycapacity-1.0.0.zip"), "utf8"), "not really a mod")
   })
 
   it("puts a backup of an empty installation back as an empty folder", async () => {

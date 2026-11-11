@@ -749,6 +749,7 @@ describe("worlds IPC handlers", () => {
     const sourcePath = join(installationsRoot, "install-a")
     mkdirSync(join(sourcePath, "Saves"), { recursive: true })
     writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
 
     const deadId = "40000000-0000-4000-8000-000000000004"
     const existingBackups: WorldBackupType[] = [{ id: deadId, date: 100, path: join(backupsFolder, "Worlds", "missing.tar.gz"), worldName: "World.vcdbs" }]
@@ -768,6 +769,26 @@ describe("worlds IPC handlers", () => {
     const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
     expect(savedBackups).toHaveLength(1)
     expect(savedBackups[0]?.id).toBe(result.backup.id)
+  })
+
+  it("refuses to recreate a shared Worlds folder while another installation has a recorded backup (#748)", async () => {
+    const firstPath = join(installationsRoot, "install-a")
+    const secondPath = join(installationsRoot, "install-b")
+    mkdirSync(join(firstPath, "Saves"), { recursive: true })
+    mkdirSync(join(secondPath, "Saves"), { recursive: true })
+    writeFileSync(join(firstPath, "Saves", "First.vcdbs"), "first", "utf8")
+    writeFileSync(join(secondPath, "Saves", "Second.vcdbs"), "second", "utf8")
+    const id = "40000000-0000-4000-8000-000000000005"
+    const archive = { id, date: 100, path: join(backupsFolder, "Worlds", `${id}.tar.gz`), worldName: "Second.vcdbs" }
+    writeConfig([installation("install-a", firstPath), installation("install-b", secondPath, "1.22.7", [archive])])
+    const event = await createTrustedEvent()
+
+    expect(await handler("worlds-backup")(event, "install-a", "First.vcdbs")).toEqual({ ok: false, reason: "backup-folder-unavailable" })
+    expect(await handler("worlds-backup")(event, "install-b", "Second.vcdbs")).toEqual({ ok: false, reason: "backup-folder-unavailable" })
+    expect(compressionState.calls).toHaveLength(0)
+    expect(existsSync(join(backupsFolder, "Worlds"))).toBe(false)
+    const saved = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    expect(saved.installations[1]?.worldBackups).toEqual([archive])
   })
 
   it("refuses to delete a world backup when the installation is playing", async () => {
