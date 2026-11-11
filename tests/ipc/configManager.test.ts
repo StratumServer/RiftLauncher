@@ -264,6 +264,10 @@ describe("normalizeConfig: installations", () => {
     assert.equal(inRange.installations[0]!.backupsLimit, 7)
     assert.equal(inRange.installations[0]!.compressionLevel, 8, "truncated, not rounded, and still in range so it is not the fallback")
     assert.equal(inRange.installations[0]!.lastTimePlayed, 12_345)
+
+    // Add and Edit Installation refuse a fraction, so one written into config.json by hand must not reach them.
+    const fraction = normalizeConfig({ installations: [{ id: "a", path: "/a", backupsLimit: 1.5 }] })
+    assert.equal(fraction.installations[0]!.backupsLimit, 1, "truncated like compressionLevel")
   })
 
   it("keeps backups only when they are records with a non-empty id and path, capped at 100", async () => {
