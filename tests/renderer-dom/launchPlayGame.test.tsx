@@ -581,7 +581,7 @@ describe("MainMenu Play button", () => {
           })
         )
       },
-      pathsManager: { checkPathExists: vi.fn(async (path: string) => path !== outputFolder), compressOnPath: vi.fn(async () => true) },
+      pathsManager: { checkPathExists: vi.fn(async (path: string) => path !== outputFolder && !path.startsWith(`${outputFolder}/`)), compressOnPath: vi.fn(async () => true) },
       gameManager: { executeGame }
     })
 

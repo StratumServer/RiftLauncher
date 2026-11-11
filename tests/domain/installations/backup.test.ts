@@ -413,6 +413,21 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
+  it("does not recreate another installation's missing backup folder when their folder names match (#748)", async () => {
+    const outputFolder = "/backups/Installations/My-Install-Test"
+    const archived = snapshot({ backups: [backup("old-a", { path: `${outputFolder}/old.tar.gz` })] })
+    const selected = snapshot({ id: "installation-2", path: "/games/my-second-install" })
+    const { archiver, requests } = fakeArchiver()
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: [outputFolder] }), archiver })
+
+    assert.deepEqual(await makeInstallationBackup(ports, { installation: selected, backupsFolder: "/backups", otherBackups: archived.backups }), {
+      ok: false,
+      reason: "backup-folder-unavailable",
+      deletedBackupIds: []
+    })
+    assert.deepEqual(requests, [])
+  })
+
   it("tells gone, unreachable and live records apart in one list", async () => {
     // b3 was deleted by hand from a folder that is still there. b2 and b6 sit on a drive that is not.
     // Only b3 comes off the list, and the three archives on disk (b1, b4, b5) are at the limit of three,

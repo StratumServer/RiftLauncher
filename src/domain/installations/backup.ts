@@ -73,6 +73,8 @@ export interface MakeInstallationBackupPorts {
 export interface MakeInstallationBackupInput {
   installation: InstallationSnapshot
   backupsFolder: string
+  /** Records from other installations, which may share the same sanitized folder name. */
+  otherBackups?: readonly Pick<BackupRecord, "path">[]
 }
 
 /**
@@ -234,7 +236,7 @@ export async function isRecordedBackupFolderUnavailable(fileSystem: Pick<FileSys
  * @returns The new record, or the reason nothing was produced.
  */
 export async function makeInstallationBackup(ports: MakeInstallationBackupPorts, input: MakeInstallationBackupInput, events: MakeInstallationBackupEvents = {}): Promise<MakeInstallationBackupResult> {
-  const { installation, backupsFolder } = input
+  const { installation, backupsFolder, otherBackups = [] } = input
 
   if (installation.isBackingUp) return refuse("installation-busy")
   if (installation.isPlaying) return refuse("installation-playing")
@@ -260,7 +262,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     // Backups were zips up to 1.7.0-beta.4 and the restore still reads those, by
     // the extension recorded with each one. New ones are gzipped tar.
     const outputFolder = await ports.paths.join([backupsFolder, INSTALLATIONS_BACKUP_SUBFOLDER, cleanInstallationName])
-    if (await isRecordedBackupFolderUnavailable(ports.fileSystem, outputFolder, installation.backups)) return refuse("backup-folder-unavailable")
+    if (await isRecordedBackupFolderUnavailable(ports.fileSystem, outputFolder, [...installation.backups, ...otherBackups])) return refuse("backup-folder-unavailable")
     const name = await freeArchiveName(ports, installation, outputFolder, `${cleanInstallationName}_${dateStamp}`)
     if (!name) return refuse("compress-failed", [], "No free archive name.")
     const { fileName, archivePath } = name

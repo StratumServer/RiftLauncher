@@ -627,6 +627,7 @@
       "exportModConfigsBadName": "Windows n'accepte pas ce nom de fichier",
       "exportModConfigsCollides": "Ne diffère d'un autre fichier de configuration que par la casse",
       "exportModConfigsLinked": "Les liens ne peuvent pas voyager dans un modpack.",
+      "exportModConfigsUnreadableName": "Les noms qui ne sont pas du texte valide ne peuvent pas être inclus dans un pack de mods.",
       "exportModConfigsPlaying": "Cette installation est en cours de partie. Ses configs de mods pourront être listées une fois le jeu fermé.",
       "exportModConfigsUnreadable": "Le dossier de configs de mods de cette installation n'a pas pu être lu, le modpack ne peut donc pas emporter ses configs.",
       "exportModConfigsSkip": "Exporter sans configs",
@@ -736,7 +737,7 @@
       "backupFailedSkipLaunch": "La sauvegarde a échoué. Lancer sans sauvegarde cette fois-ci ?",
       "launchAnyway": "Lancer quand même",
       "installationPathMissing": "Aucune sauvegarde faite : cette installation n'a pas encore de données. Jouez-y une fois pour les générer.",
-      "backupFolderUnavailable": "Le dossier des sauvegardes est introuvable. Rétablissez le dossier, reconnectez le disque ou supprimez de la liste les sauvegardes de ce dossier avant de réessayer.",
+      "backupFolderUnavailable": "Aucune sauvegarde faite : le dossier des sauvegardes de cette installation est introuvable. Reconnectez le disque, rétablissez le dossier ou supprimez les sauvegardes de ce dossier dans la liste.",
       "noBackupsFolder": "Aucune sauvegarde faite : vous n'avez pas défini de dossier des sauvegardes. Choisissez-en un sur la page Configuration.",
       "backupsDisabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
       "compressNoFreeSpace": "Aucune sauvegarde faite : le disque qui contient le dossier des sauvegardes n'a pas assez d'espace libre pour cette installation.",
@@ -802,6 +803,7 @@
         "world-has-sidecars": "Ce monde est ouvert dans Vintage Story, ou n'a pas été fermé correctement après un plantage ou une coupure de courant. Fermez le jeu, ou ouvrez ce monde une fois dans le jeu et quittez-le normalement, puis réessayez.",
         "archive-not-found": "Sauvegarde du monde introuvable.",
         "invalid-request": "Cette opération sur le monde n'est pas valide.",
+        "backup-folder-unavailable": "Aucune sauvegarde faite : le dossier partagé des sauvegardes de mondes est introuvable. Reconnectez le disque, rétablissez le dossier ou supprimez les sauvegardes de ce dossier depuis la page Mondes de chaque installation.",
         "backups-disabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
         "operation-failed": "L'opération sur le monde a échoué. Rien d'autre n'a été modifié."
       }
@@ -1010,6 +1012,8 @@
       "configUnreadableReset": "Votre fichier de réglages n'a pas pu être lu. Une copie a été conservée sous le nom {{copyName}}, mais aucun réglage antérieur n'a pu être restauré : les valeurs par défaut sont utilisées. Pour récupérer ce qu'il contenait, fermez RiftLauncher, corrigez le JSON dans {{copyName}}, puis renommez-le en config.json.",
       "configUnreadableRestoredUnsaved": "Votre fichier de réglages n'a pas pu être lu, et aucune copie n'a pu en être conservée. Cette session tourne avec les réglages d'avant la dernière mise à jour ayant changé le format des réglages, et rien ne sera enregistré durant cette session.",
       "configUnreadableResetUnsaved": "Votre fichier de réglages n'a pas pu être lu, et aucune copie n'a pu en être conservée. Cette session tourne avec les réglages par défaut, et rien ne sera enregistré durant cette session.",
+      "configNotAnObjectRestored": "Votre fichier ne contenait aucun réglage. Une copie a été conservée sous le nom {{copyName}} et les réglages d’avant la dernière mise à jour qui a modifié leur format ont été restaurés.",
+      "configNotAnObjectReset": "Votre fichier ne contenait aucun réglage. Une copie a été conservée sous le nom {{copyName}} et les réglages par défaut sont utilisés.",
       "userDataImportFailed": "Vos données de VS Launcher n'ont pas pu être importées : RiftLauncher a démarré avec un profil vide. L'import sera retenté au prochain démarrage, tant que vous ne modifiez rien dans RiftLauncher d'ici là. Les données de VS Launcher n'ont pas été modifiées.",
       "missingFields": "Remplissez tous les champs avant d'enregistrer.",
       "compressed": "Compression terminée : {{compressName}}.",

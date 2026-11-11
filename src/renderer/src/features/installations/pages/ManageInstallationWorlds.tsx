@@ -63,6 +63,7 @@ function ManageInstallationWorlds(): JSX.Element {
   const [worldPendingBackupOffer, setWorldPendingBackupOffer] = useState<WorldType | null>(null)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const deleteNameId = useId()
+  const targetWarningId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -82,7 +83,7 @@ function ManageInstallationWorlds(): JSX.Element {
     if (!installation || isPlaying) return false
     const result = await window.api.worldsManager.backup(installation.id, world.name)
     if (!result.ok) {
-      addNotification(t(result.reason === "backup-folder-unavailable" ? "features.backups.backupFolderUnavailable" : `features.worlds.error.${result.reason}`), "error")
+      addNotification(t(`features.worlds.error.${result.reason}`), "error")
       return false
     }
     const deletedSet = new Set(result.deletedBackupIds ?? [])
@@ -247,6 +248,8 @@ function ManageInstallationWorlds(): JSX.Element {
 
   if (!installation) return <div className="p-8">{t("features.installations.noInstallationFound")}</div>
 
+  const showTargetWarning = target && worldVersionWarning(installation.version, target.version)
+
   const backupOnly = new Map<string, WorldType>()
   for (const backup of installation.worldBackups ?? []) {
     const key = backup.worldName
@@ -281,7 +284,13 @@ function ManageInstallationWorlds(): JSX.Element {
               <p className="text-zinc-400">{installation.name}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <select className="bg-zinc-800 rounded p-2" value={targetId} onChange={(event) => setTargetId(event.target.value)} aria-label={t("features.worlds.transferTarget")}>
+              <select
+                className="bg-zinc-800 rounded p-2"
+                value={targetId}
+                onChange={(event) => setTargetId(event.target.value)}
+                aria-label={t("features.worlds.transferTarget")}
+                aria-describedby={showTargetWarning ? targetWarningId : undefined}
+              >
                 <option value="">{t("features.worlds.transferTarget")}</option>
                 {installations
                   .filter((candidate) => candidate.id !== installation.id)
@@ -292,11 +301,9 @@ function ManageInstallationWorlds(): JSX.Element {
                     </option>
                   ))}
               </select>
-              {target && worldVersionWarning(installation.version, target.version) && (
-                <p role="status" className="max-w-xs text-right text-xs text-amber-300">
-                  {t("features.worlds.versionCompatibilityWarning")}
-                </p>
-              )}
+              <p id={targetWarningId} role="status" className={`max-w-xs text-right text-xs text-amber-300 ${showTargetWarning ? "" : "sr-only"}`}>
+                {showTargetWarning ? t("features.worlds.versionCompatibilityWarning") : ""}
+              </p>
             </div>
           </div>
           {loading && <p className="relative p-4 text-center text-zinc-400">{t("generic.reloading")}</p>}

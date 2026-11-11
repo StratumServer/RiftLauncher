@@ -37,8 +37,8 @@ export function useCheckPathExists(): (path: string) => Promise<boolean> {
   return (path) => window.api.pathsManager.checkPathExists(path)
 }
 
-/** Makes sure `path` exists on disk, creating it when it's missing. Resolves `false` instead of throwing when creation fails, so callers must await and check the result rather than fire it and forget it. */
-export function useEnsurePathExists(): (path: string) => Promise<boolean> {
+/** Makes sure `path` exists on disk, creating it when it's missing. Resolves with a result instead of throwing when creation fails, so callers must await and check the result rather than fire it and forget it. */
+export function useEnsurePathExists(): (path: string) => Promise<EnsurePathExistsResult> {
   return (path) => window.api.pathsManager.ensurePathExists(path)
 }
 
@@ -61,7 +61,7 @@ export function useOpenPathInExplorer(): (path: string, options?: OpenPathInExpl
   async function openPathInExplorer(path: string, options: OpenPathInExplorerOptions = {}): Promise<boolean> {
     const folder = options.parentOfFile ? await window.api.pathsManager.removeFileFromPath(path) : path
 
-    const exists = options.ensure ? await window.api.pathsManager.ensurePathExists(folder) : await window.api.pathsManager.checkPathExists(folder)
+    const exists = options.ensure ? (await window.api.pathsManager.ensurePathExists(folder)).ok : await window.api.pathsManager.checkPathExists(folder)
 
     if (!exists) {
       addNotification(t("notifications.body.folderDoesntExists"), "error")

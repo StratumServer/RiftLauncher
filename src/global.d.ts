@@ -635,6 +635,11 @@ declare global {
   /** RUN_INSTALLER's verdict. `ok: false` means nothing was installed. */
   type InstallerRunResult = { ok: true } | { ok: false; reason: InstallerRunFailureReason }
 
+  type EnsurePathExistsFailureReason = "unauthorized-path" | "failed"
+
+  /** ENSURE_PATH_EXISTS' verdict. `ok: false` means the folder does not exist and was not created. */
+  type EnsurePathExistsResult = { ok: true } | { ok: false; reason: EnsurePathExistsFailureReason }
+
   /**
    * Why SAVE_CONFIG refused to persist the config it was handed. The
    * renderer sends the whole config on every change; a persistent refusal
@@ -683,7 +688,12 @@ declare global {
    * - `kind: "import-failed"`: the first-run copy of VS Launcher's data failed (#708). The launcher
    *   started on an empty profile and leaves a marker so the next start tries the import again.
    */
-  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" } | { kind: "import-failed" }
+  type ConfigRecoveryUnreadableCause = "invalid-json" | "not-an-object"
+
+  type ConfigRecoveryNotice =
+    | { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null; cause: ConfigRecoveryUnreadableCause }
+    | { kind: "read-failed" }
+    | { kind: "import-failed" }
 
   /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every
@@ -768,10 +778,14 @@ declare global {
    * `configs`, which the export builds its rows from and can only carry what it reads, and they are
    * names and nothing else: no link was read or followed to where it points.
    *
+   * `unreadable` names entries whose names on disk are not valid UTF-8. They are kept out of
+   * `configs` because invalid UTF-8 filenames cannot travel in a JSON modpack, but they are reported
+   * by name so the export picker can show disabled rows instead of failing the whole export.
+   *
    * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
    *   "only while the game is not running", so this is the game's rule, not the launcher's.
    */
-  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[]; unreadable?: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
 
   /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"
