@@ -17,22 +17,22 @@ Community translation happens on [Weblate](https://hosted.weblate.org/projects/r
 
 <!-- i18n-status:start -->
 
-en-US is the source and carries 961 keys.
+en-US is the source and carries 964 keys.
 
 | Locale | Keys | Missing | Stale | To review on Weblate                                                                                       |
 | ------ | ---: | ------: | ----: | ---------------------------------------------------------------------------------------------------------- |
-| be-BY  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/be/?q=state:needs-editing)      |
-| de-DE  |  855 |     106 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/de/?q=state:needs-editing)      |
-| es-ES  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/es/?q=state:needs-editing)      |
-| fr-FR  | 1000 |       0 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/fr/?q=state:needs-editing)      |
-| hu-HU  |  855 |     106 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/hu/?q=state:needs-editing)      |
-| it-IT  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/it/?q=state:needs-editing)      |
-| nl-NL  |  855 |     106 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/nl/?q=state:needs-editing)      |
-| pl-PL  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pl/?q=state:needs-editing)      |
-| pt-BR  |  883 |     117 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_BR/?q=state:needs-editing)   |
-| pt-PT  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_PT/?q=state:needs-editing)   |
-| ru-RU  |  996 |       6 |     2 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/ru/?q=state:needs-editing)      |
-| uk-UA  |  882 |     118 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/uk/?q=state:needs-editing)      |
-| zh-CN  |  828 |      94 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/zh_Hans/?q=state:needs-editing) |
+| be-BY  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/be/?q=state:needs-editing)      |
+| de-DE  |  855 |     109 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/de/?q=state:needs-editing)      |
+| es-ES  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/es/?q=state:needs-editing)      |
+| fr-FR  | 1003 |       0 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/fr/?q=state:needs-editing)      |
+| hu-HU  |  855 |     109 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/hu/?q=state:needs-editing)      |
+| it-IT  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/it/?q=state:needs-editing)      |
+| nl-NL  |  855 |     109 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/nl/?q=state:needs-editing)      |
+| pl-PL  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pl/?q=state:needs-editing)      |
+| pt-BR  |  883 |     120 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_BR/?q=state:needs-editing)   |
+| pt-PT  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/pt_PT/?q=state:needs-editing)   |
+| ru-RU  |  996 |       9 |     2 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/ru/?q=state:needs-editing)      |
+| uk-UA  |  882 |     121 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/uk/?q=state:needs-editing)      |
+| zh-CN  |  828 |      97 |     0 | [Needs editing](https://hosted.weblate.org/translate/riftlauncher/launcher/zh_Hans/?q=state:needs-editing) |
 
 <!-- i18n-status:end -->

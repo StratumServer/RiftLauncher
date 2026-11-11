@@ -1323,6 +1323,35 @@ describe("getConfig: config.json backup before a schema migration", () => {
     assert.equal(backed.sentinel, "already there")
   })
 
+  it("replaces an existing backup when it is not a usable restore point (#625)", async () => {
+    const fse = (await import("fs-extra")).default
+    await fse.ensureDir(userDataFolder)
+    // An unusable backup (e.g. valid JSON array) left by a prior run or corrupt write.
+    await fse.writeFile(backupPath(), "[]", "utf-8")
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ schemaVersion: 2, lastUsedInstallation: "fresh-migration" })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.schemaVersion, 2, "the unusable backup was replaced by the real pre-migration snapshot")
+    assert.equal(backed.lastUsedInstallation, "fresh-migration")
+  })
+
+  it("replaces a corrupted existing backup file on the next migration (#625)", async () => {
+    const fse = (await import("fs-extra")).default
+    await fse.ensureDir(userDataFolder)
+    await fse.writeFile(backupPath(), "{corrupt syntax,", "utf-8")
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ schemaVersion: 2, lastUsedInstallation: "from-corrupt-backup-fix" })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.schemaVersion, 2)
+    assert.equal(backed.lastUsedInstallation, "from-corrupt-backup-fix")
+  })
+
   const LEGACY_ACCOUNT = {
     email: "player@example.test",
     playerName: "TestPlayer",
@@ -1470,7 +1499,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
     const [copy] = unreadableCopies()
     assert.ok(copy)
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy, cause: "invalid-json" })
   })
 
   // Lazy bodies: minimalConfig reads the per-test temp folders, which only exist once beforeEach has run.
@@ -1491,7 +1520,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
       assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
       const [copy] = unreadableCopies()
       assert.ok(copy, "the unreadable file is still kept")
-      assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
+      assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy, cause: "invalid-json" })
     })
   }
 
@@ -1531,7 +1560,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     const [copy] = unreadableCopies()
     assert.ok(copy)
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy, cause: "invalid-json" })
   })
 
   it("leaves a pending notice saying the previous settings could not be restored, with no backup", async () => {
@@ -1542,7 +1571,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     const [copy] = unreadableCopies()
     assert.ok(copy)
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy, cause: "invalid-json" })
   })
 
   /**
@@ -1696,7 +1725,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     await getConfig()
 
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: false, copyName: null })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: false, copyName: null, cause: "invalid-json" })
   })
 
   /**
@@ -1849,6 +1878,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.ok(notice)
     if (notice.kind !== "unreadable") throw new Error(`expected an "unreadable" notice, got ${notice.kind}`)
     assert.equal(notice.preserved, true)
+    assert.equal(notice.cause, "not-an-object")
   })
 
   for (const notAnObject of ["null", "42", '"a string"']) {
