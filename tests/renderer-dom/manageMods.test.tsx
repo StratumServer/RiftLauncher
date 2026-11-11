@@ -2532,7 +2532,7 @@ describe("startup update notices on Manage Mods (#752)", () => {
       if (scenario === "all" || scenario === "row") {
         await waitFor(() => expect(screen.queryByText(notice)).toBeNull())
       } else {
-        expect(screen.getByText(notice)).toBeTruthy()
+        await expect(waitFor(() => expect(screen.queryByText(notice)).toBeNull(), { timeout: 1_500 })).rejects.toThrow()
       }
       expect(downloadOnPath).toHaveBeenCalledTimes(scenario === "all" ? 2 : scenario === "offline" ? 0 : 1)
     },

@@ -148,7 +148,8 @@ async function removeWorldBackupArchive(archivePath: string, expectedBackupId: s
     if (!stat.isFile() || stat.isSymbolicLink()) return false
     await fse.remove(safePath)
     return !(await fse.pathExists(safePath))
-  } catch {
+  } catch (error) {
+    logMessage("debug", `${LOG_PREFIX} [WORLD BACKUP] ${getErrorMessage(error)}`)
     return false
   }
 }
