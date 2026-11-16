@@ -118,6 +118,39 @@ describe("config not-an-object notice (#625)", () => {
     expect(seen[0]?.body).toContain("A copy was kept as config.unreadable-1727690000000.json")
     expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
   })
+
+  it("does not name a preserved copy when an unreadable config could not be saved", async () => {
+    vi.resetModules()
+    const { NotificationsProvider: FreshProvider, useNotificationsContext: useFreshNotifications } = await import("@renderer/contexts/NotificationsContext")
+    let seen: NotificationType[] = []
+    function Probe(): null {
+      seen = useFreshNotifications().notifications
+      return null
+    }
+    const getConfigRecoveryNotice = vi.fn(
+      async () =>
+        ({
+          kind: "unreadable",
+          cause: "not-an-object",
+          restored: true,
+          preserved: false,
+          copyName: null
+        }) as ConfigRecoveryNotice
+    )
+    installMockWindowApi({ configManager: { getConfigRecoveryNotice } })
+
+    render(
+      <FreshProvider>
+        <Probe />
+      </FreshProvider>
+    )
+
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]?.type).toBe("warning")
+    expect(seen[0]?.body).toContain("a copy of it could not be kept")
+    expect(seen[0]?.body).not.toContain("{{copyName}}")
+    expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("failed VS Launcher import notice (#708)", () => {

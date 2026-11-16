@@ -1363,6 +1363,98 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
+  it("rechecks a folder swapped during config reading before keeping a recovery copy (#626)", async () => {
+    writeConfig()
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "target.json"), "theirs-secret", "utf-8")
+
+    mkdirSync(join(modConfigFolder(), "swapped"), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "legit.json"), '{"legit":1}', "utf-8")
+    const swappedConfig = join(modConfigFolder(), "swapped", "target.json")
+    writeFileSync(swappedConfig, '{"target":1}', "utf-8")
+
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const originalReadFile = fse.readFile.bind(fse)
+    let swapped = false
+    const readFile = vi.spyOn(fse, "readFile").mockImplementation((async (target: unknown, ...rest: unknown[]) => {
+      if (!swapped && String(target) === swappedConfig) {
+        swapped = true
+        rmSync(join(modConfigFolder(), "swapped"), { recursive: true, force: true })
+        symlinkSync(outside, join(modConfigFolder(), "swapped"))
+      }
+      return (originalReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest)
+    }) as never)
+    const copy = vi.spyOn(fse, "copy")
+
+    try {
+      const applied = await applyModConfigsHandler()(event, installationPath, [
+        { name: "legit.json", ...entry('{"legit":2}') },
+        { name: "swapped/target.json", ...entry('{"target":2}') }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.failed, [{ name: "swapped/target.json", reason: "write-failed" }])
+      assert.deepEqual(applied.applied, [{ name: "legit.json", kind: "replace" }])
+      assert.notEqual(applied.backupFolder, "")
+      assert.equal(existsSync(join(applied.backupFolder, "swapped", "target.json")), false)
+      assert.equal(
+        copy.mock.calls.some(([from]) => String(from) === swappedConfig),
+        false
+      )
+      assert.equal(readFileSync(join(outside, "target.json"), "utf-8"), "theirs-secret")
+    } finally {
+      readFile.mockRestore()
+      copy.mockRestore()
+    }
+  })
+
+  it("rechecks a folder swapped during the recovery copy before keeping that copy (#626)", async () => {
+    writeConfig()
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "target.json"), "theirs-secret", "utf-8")
+
+    mkdirSync(join(modConfigFolder(), "swapped"), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "legit.json"), '{"legit":1}', "utf-8")
+    const swappedConfig = join(modConfigFolder(), "swapped", "target.json")
+    writeFileSync(swappedConfig, '{"target":1}', "utf-8")
+
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const originalCopy = fse.copy.bind(fse)
+    let swapped = false
+    const copy = vi.spyOn(fse, "copy").mockImplementation(async (from, to, options) => {
+      await originalCopy(from, to, options)
+      if (!swapped && String(from) === swappedConfig) {
+        swapped = true
+        rmSync(join(modConfigFolder(), "swapped"), { recursive: true, force: true })
+        symlinkSync(outside, join(modConfigFolder(), "swapped"))
+      }
+    })
+
+    try {
+      const applied = await applyModConfigsHandler()(event, installationPath, [
+        { name: "legit.json", ...entry('{"legit":2}') },
+        { name: "swapped/target.json", ...entry('{"target":2}') }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.equal(swapped, true, "the destination folder changes only after its backup copy lands")
+      assert.deepEqual(applied.failed, [{ name: "swapped/target.json", reason: "write-failed" }])
+      assert.deepEqual(applied.applied, [{ name: "legit.json", kind: "replace" }])
+      assert.notEqual(applied.backupFolder, "")
+      assert.equal(existsSync(join(applied.backupFolder, "legit.json")), true)
+      assert.equal(existsSync(join(applied.backupFolder, "swapped", "target.json")), false)
+      assert.equal(readFileSync(join(outside, "target.json"), "utf-8"), "theirs-secret")
+    } finally {
+      copy.mockRestore()
+    }
+  })
+
   it("refuses a linked destination file at lstat without reading, copying or writing through it", async () => {
     writeConfig()
     const outside = join(temporaryRoot, "outside")

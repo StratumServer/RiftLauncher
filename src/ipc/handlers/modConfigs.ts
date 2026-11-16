@@ -805,6 +805,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
       if (refused.has(entry.key)) return
       try {
+        // Copying and verifying the recovery file can take long enough for the folder to become a
+        // link. Recheck before the config write, and remove the copy if its path changed meanwhile.
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
       } catch (error) {
         await fse.remove(backupPath)

@@ -892,9 +892,38 @@ describe("worlds IPC handlers", () => {
     assert.deepEqual(resultMismatch, { ok: false, reason: "operation-failed" })
     expect(existsSync(mismatchArchive)).toBe(true)
 
-    const resultInst = await handler("worlds-delete-backup")(event, "install-a", "inst-worlds-id")
-    assert.deepEqual(resultInst, { ok: false, reason: "operation-failed" })
-    expect(existsSync(instArchive)).toBe(true)
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+    try {
+      const resultInst = await handler("worlds-delete-backup")(event, "install-a", "inst-worlds-id")
+      assert.deepEqual(resultInst, { ok: false, reason: "operation-failed" })
+      expect(existsSync(instArchive)).toBe(true)
+      expect(logSpy).toHaveBeenCalledWith("warn", expect.stringContaining("[DELETE BACKUP] Could not remove world backup inst-worlds-id."))
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it("logs the reason a world backup archive could not be removed", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+
+    const backupId = "80000000-0000-4000-8000-000000000008"
+    const archivePath = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(archivePath, "archive", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: archivePath, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+
+    assertManagedDeletionPathSpy.mockRejectedValueOnce(new Error("EACCES permission denied"))
+    try {
+      const result = await handler("worlds-delete-backup")(event, "install-a", backupId)
+      assert.deepEqual(result, { ok: false, reason: "operation-failed" })
+      expect(logSpy).toHaveBeenCalledWith("debug", expect.stringContaining("EACCES permission denied"))
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 
   it("refuses to delete another world's archive when pruning older backups (#620)", async () => {
@@ -916,12 +945,18 @@ describe("worlds IPC handlers", () => {
     writeConfig([inst])
 
     const event = await createTrustedEvent()
-    const result = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
-    assert.equal(result.ok, true)
-    if (!result.ok) return
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+    try {
+      const result = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
+      assert.equal(result.ok, true)
+      if (!result.ok) return
 
-    expect(existsSync(otherWorldArchive)).toBe(true)
-    expect(result.deletedBackupIds).toEqual([])
+      expect(existsSync(otherWorldArchive)).toBe(true)
+      expect(result.deletedBackupIds).toEqual([])
+      expect(logSpy).toHaveBeenCalledWith("warn", expect.stringContaining(`[BACKUP] Could not prune world backup ${idPruned}.`))
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 
   it("refuses to make a world backup when backupsLimit is 0", async () => {
