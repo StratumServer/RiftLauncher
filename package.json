@@ -72,7 +72,7 @@
     "eslint-plugin-react": "^7.34.3",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.5.0",
-    "i18next": "^24.0.5",
+    "i18next": "^27.2.6",
     "jsdom": "^27.4.0",
     "motion": "^11.13.1",
     "oxlint": "1.83.0",
